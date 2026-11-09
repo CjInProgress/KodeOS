@@ -1,0 +1,11 @@
+name: Fetch the submodules
+description: >
+  The SDK and, inside it, the C5's firmware. Both are public, so HTTPS needs
+  no key. Every job that fetches them uses this, so the arrangement lives in
+  one place.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: git submodule update --init --recursive
