@@ -39,6 +39,7 @@ idf_component_register(
          "kgui_tilt.c"
          "kgui_welcome.c"
          "kgui_welcome_ring.c"
+         "kgui_wface.c"
          "kgui_wifi.c"
          "kgui_syscard.c"
          "kgui_sysscreen.c"

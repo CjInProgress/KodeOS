@@ -77,6 +77,9 @@ run_suite kgui_crit -I"$out/kaos" test_kgui_crit.c ../kgui_syscard.c "$out/boot_
 # What a cable is doing, in words: the chip's vocabulary and no chip.
 run_suite kgui_charge -I"$sdk/kdrv/power/include" test_kgui_charge.c ../kgui_charge.c
 
+# Whose face a write's card wears: strings and two flags.
+run_suite kgui_wface test_kgui_wface.c ../kgui_wface.c
+
 # When a pack is given up for its canvas.
 run_suite kgui_pack_fit test_kgui_pack_fit.c ../kgui_pack_fit.c
 
