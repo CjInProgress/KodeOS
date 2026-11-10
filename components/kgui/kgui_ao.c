@@ -3590,6 +3590,7 @@ static void gui_face_fields(GuiFace *face, AppDataFieldsEvt const * const f);
 static void gui_write_face_settle(Gui * const me);
 static void gui_write_face_report(Gui * const me, const AppProgressEvt *p);
 static bool gui_write_face_worn(Gui const * const me, int8_t row);
+static void gui_write_face_wear(Gui * const me, const GuiFace *row);
 static const GuiFace *gui_row_face(Gui const * const me, uint8_t row);
 static const GuiFace *gui_row_face_of(Gui const * const me, GuiRow const * const row);
 static uint8_t gui_row_slot(Gui const * const me, uint8_t row);
@@ -14691,14 +14692,37 @@ static void gui_opening_show(Gui * const me)
  */
 
 /**
- * @brief The card's face is a new app's: wear a row's, or ask its folder.
+ * @brief Give the card's face what a row's face shows: its words and colour.
  *
- * A row that goes by the project and has heard from its folder already holds
- * the answer, picture included: it is copied, and nothing is asked. Otherwise
- * the face is the project's name and the folder's question goes out ahead of
- * the rows' (gui_ask_next_appdata()).
+ * @param me  The AO.
+ * @param row The row's face.
+ */
+static void gui_write_face_wear(Gui * const me, const GuiFace *row)
+{
+    GuiFace * const face = &me->write_face;
+
+    (void)snprintf(face->name, sizeof(face->name), "%s", row->name);
+    (void)snprintf(face->category, sizeof(face->category), "%s", row->category);
+    (void)snprintf(face->version, sizeof(face->version), "%s", row->version);
+    (void)snprintf(face->description, sizeof(face->description), "%s",
+                   row->description);
+    face->color    = row->color;
+    face->color_ok = row->color_ok;
+}
+
+/**
+ * @brief The card's face is a new app's: wear a row's meanwhile, and ask its
+ *        folder.
  *
- * @param me The AO; me->wface names the project.
+ * A row that goes by the project and has heard from its folder shows what the
+ * folder said then, picture included, and the card wears that at once. The
+ * folder is asked all the same, ahead of the rows' questions
+ * (gui_ask_next_appdata()): a folder can be written or fetched at any moment
+ * and no row hears of it, so the row may be older than the folder. A busy
+ * AO_Storage, which is what an install from a file meets for its whole
+ * length, leaves the card with the row's face.
+ *
+ * @param me The AO; me->wface names the project and owes its question.
  */
 static void gui_write_face_take(Gui * const me)
 {
@@ -14709,22 +14733,15 @@ static void gui_write_face_take(Gui * const me)
     gui_face_seed(&me->write_face, "", me->wface.project, "", NULL);
     if ( (NULL != row) && row->settled )
     {
-        me->write_face = *row;
+        gui_write_face_wear(me, row);
         if ( row->icon_ok && ((uint8_t)GUI_ROWS_MAX > slot)
             && (NULL != me->icon_slot[slot]) && (NULL != me->write_icon) )
         {
             (void)memcpy(me->write_icon, me->icon_slot[slot], KAPP_ICON_BYTES);
+            me->write_face.icon_ok = true;
         }
-        else
-        {
-            me->write_face.icon_ok = false;
-        }
-        me->wface.owed = false;
     }
-    else
-    {
-        gui_ask_next_appdata(me);
-    }
+    gui_ask_next_appdata(me);
 }
 
 /**
@@ -34725,14 +34742,25 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             }
             if ( kgui_wface_is(&me->wface, f->project) )
             {
-                /* The card of a write about no row wears this folder too. */
+                /* The card of a write about no row wears this folder too. A
+                 * busy answer is no answer and changes nothing on it. */
                 me->write_face.json_status = f->json_status;
                 me->write_face.icon_status = f->icon_status;
-                if ( (uint8_t)APPDATA_ICON_BUSY != f->icon_status )
+                if ( (uint8_t)APPDATA_ICON_BUSY == f->icon_status )
+                {
+                    /* Asked again a little later (gui_write_face_settle()). */
+                }
+                else if ( NULL != face )
+                {
+                    /* A row goes by the project and has just been written
+                     * from this answer, over its own image's words. */
+                    gui_write_face_wear(me, face);
+                }
+                else
                 {
                     gui_face_seed(&me->write_face, "", me->wface.project, "", NULL);
+                    gui_face_fields(&me->write_face, f);
                 }
-                gui_face_fields(&me->write_face, f);
             }
             status = Q_HANDLED();
             break;
