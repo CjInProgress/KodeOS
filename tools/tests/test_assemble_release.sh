@@ -287,12 +287,12 @@ if c5_case no-c5 'rm "$dir/storage_stage/c5_slave.bin"'; then
 else
     ok "assemble_release.sh refuses a FAT with no C5 image"
 fi
-if c5_case bench-file 'echo "bench app" > "$dir/storage_stage/buttons_led.kfw"' ; then
+if c5_case bench-file 'echo "bench app" > "$dir/storage_stage/buttons_led.bin"' ; then
     bad "assemble_release.sh should refuse a bench file in the FAT"
 else
     ok "assemble_release.sh refuses a bench file in the FAT"
 fi
-if grep -q 'buttons_led.kfw' "$work/bench-file.err"; then
+if grep -q 'buttons_led.bin' "$work/bench-file.err"; then
     ok "the refusal names the bench file"
 else
     bad "the refusal does not name the bench file"

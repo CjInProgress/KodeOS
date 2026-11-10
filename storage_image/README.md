@@ -12,15 +12,14 @@ idf.py -p PORT storage-flash
 
 The command replaces the whole partition. A plain `idf.py flash` never changes the partition. The files in this folder and the pack (about 70 KB) must fit in the volume, which holds about 2,016 KB. `c5_slave.bin` takes about 1,310 KB of it. Wear levelling uses the rest of the 2 MB.
 
-**The image files are not in git.** The file `.gitignore` excludes `*.bin`, `*.kfw`, `*.commit` and `.kode/` in this folder, so the folder looks empty on GitHub. Each file is built in another folder of the repository. `tools/build_c5.sh` writes `c5_slave.bin` and `tools/build_welcome.sh` writes `.kode/`; a person copies any other file here when a test needs it on a board.
+**The image files are not in git.** The file `.gitignore` excludes `*.bin`, `*.commit` and `.kode/` in this folder, so the folder looks empty on GitHub. Each file is built in another folder of the repository. `tools/build_c5.sh` writes `c5_slave.bin` and `tools/build_welcome.sh` writes `.kode/`; a person copies any other file here when a test needs it on a board.
 
 | File | Built by | Build it again when |
 |---|---|---|
 | `c5_slave.bin` and `c5_slave.commit` | `tools/build_c5.sh`, from the C5 submodule | the commit of the C5 submodule changes |
 | `.kode/appsdata/<welcome app>/` | `tools/build_welcome.sh`, from the welcome app's `appdata/` folder | `apps_image/welcome.pin` moves |
-| `*.kfw` | `tools/mkkfw.py`, from the `.bin` of the same name | its `.bin` is built again |
 
-After `storage-flash`, the console command `fs_ls` lists the files. The console command `install` installs an app from one of them, for example `install src="fs:buttons_led.kfw" dst=app`. The `install` command does not need this folder. Its `src=` also reads `sd:`, `http://`, `https://` and `pending`.
+After `storage-flash`, the console command `fs_ls` lists the files. The console command `install` installs an app from one of them, for example `install src="fs:buttons_led.bin" dst=app`. The `install` command does not need this folder. Its `src=` also reads `sd:`, `http://`, `https://` and `pending`.
 
 **`kodeos.bin` does not go in this folder.** The build of this repository writes it as `build/kodeos.bin`. That file is about 2,725 KB, and the volume holds about 2,016 KB, so the file does not fit, even alone. A board gets a new kodeOS in one of these ways, and none of them uses the volume:
 
