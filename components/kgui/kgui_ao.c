@@ -33614,10 +33614,15 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             }
             else
             {
-                char t[48];
+                /* A done that names no app - the C5's image, a park in the
+                 * mailbox - has nothing to announce. */
+                if ( '\0' != d->name[0] )
+                {
+                    char t[48];
 
-                (void)snprintf(t, sizeof(t), "%.32s is ready", d->name);
-                gui_visit(me, GUI_VISIT_NOTICE, t);
+                    (void)snprintf(t, sizeof(t), "%.32s is ready", d->name);
+                    gui_visit(me, GUI_VISIT_NOTICE, t);
+                }
                 /* installed[] is stale the instant a write finishes: the
                  * directory just gained (or replaced) an entry. Ask both
                  * owners again rather than guess; the launcher repaints when
