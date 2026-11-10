@@ -27,6 +27,7 @@ idf_component_register(
          "kgui_list.c"
          "kgui_meta.c"
          "kgui_motion.c"
+         "kgui_osrel.c"
          "kgui_pack_fit.c"
          "kgui_prefs.c"
          "kgui_rest.c"
