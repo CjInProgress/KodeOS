@@ -30,7 +30,7 @@ typedef struct {
     const char           *size;         /**< The Size row's value (kgui_dtext_size()); "" leaves the row out. */
     const char           *built;        /**< The Built row's value (kgui_dtext_date()); "" leaves the row out. */
     const char           *description;  /**< What the app says of itself, 52 characters at most; "" for none. */
-    bool                  removable;    /**< An installed app: the Remove pill shows. */
+    bool                  removable;    /**< An installed app, or a file that names its project: the Remove pill shows. */
 } kgui_details_spec_t;
 
 #define KGUI_DETAILS_DISC_PX 72  /**< The details' icon disc, in pixels. */
@@ -79,10 +79,11 @@ void kgui_details_info(const kgui_details_spec_t *spec);
  * @brief Show the question before Remove.
  *
  * @param name  The app's name.
- * @param copy  true when a copy of the image stays on the SD card, so the
- *              caption says so; false leaves that line out.
+ * @param files true when the list shows a file of the app, on the card or on
+ *              the internal partition, so the caption says they go too;
+ *              false leaves that line out.
  */
-void kgui_details_ask(const char *name, bool copy);
+void kgui_details_ask(const char *name, bool files);
 
 /**
  * @brief Show the wait while the app leaves.

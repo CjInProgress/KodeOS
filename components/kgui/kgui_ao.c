@@ -1076,10 +1076,9 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_HINT_ROOM_LOST  "No answer. Try again"           /**< What it says when AO_AppMgr does not answer. */
 #define GUI_HINT_TOO_BIG    "Too big for this Dot"           /**< What it says of an app that cannot fit the apps region. */
 #define GUI_LONG_PRESS_MS   KODE_BUTTON_HOLD_MS                  /**< A finger that stays on an app's row, or on the Wi-Fi or Bluetooth circle, this long, within KUI_GESTURE_TAP_PX of where it landed and with no claim, opens its details or its page: the time TOP held takes. */
-#define GUI_REMOVE_WAIT_MS  15000U                               /**< The longest the Removing card waits for AO_AppMgr to take the app off the list. */
+#define GUI_REMOVE_MARGIN_MS 5000U                               /**< What the Removing card waits past AO_AppMgr's own bound on AO_Storage. */
+#define GUI_REMOVE_WAIT_MS  (APPMGR_WIPE_MS + GUI_REMOVE_MARGIN_MS) /**< The longest the Removing card waits for AO_AppMgr to say the erase ended. */
 #define GUI_REMOVE_GUARD_MS 400U                                 /**< The question before Remove ignores its pill this long after it is written: a tap or a TOP release that opened or followed it is not an answer. */
-#define GUI_REMOVE_POLL_MS  1000U                                /**< How often the Removing card asks the apps again while the app is still listed. */
-#define GUI_HINT_REMOVE_FAILED "Still installed"                /**< What the Removing card says when the app does not leave the list in time. */
 #define GUI_PCT_FULL        100                              /**< One hundred percent: a level, a share of the glass. */
 
 /** @brief The auto-lock time of a board with nothing stored, in seconds: two
@@ -2100,7 +2099,8 @@ typedef struct {
     uint32_t      rm_since_ms;              /**< When the erase was asked. */
     uint32_t      rm_ask_ms;                /**< When the question was written: its pill takes no answer for GUI_REMOVE_GUARD_MS. */
     bool          rm_busy;                  /**< An answer is on its way (the question's, or the erase): a second one is ignored until the card ends. */
-    uint32_t      rm_poll_ms;               /**< When the apps were last asked about. */
+    bool          rm_installed;             /**< It is an installed app; false for a file that is not installed. */
+    bool          rm_out;                   /**< The erase is with AO_AppMgr: its end is awaited, with the card up or not. */
 
     /* THE FACTORY RESET: the request that is out, and AO_Boot's answer as
      * the wait card reads it. */
@@ -3670,7 +3670,7 @@ static void on_shelf_pressed(lv_event_t *e);
 static void gui_list_finish(Gui * const me);
 static void gui_details_act(Gui * const me);
 static void gui_remove_go(Gui * const me);
-static void gui_remove_done(Gui * const me, bool gone);
+static void gui_remove_done(Gui * const me, uint8_t status);
 static void gui_remove_tick(Gui * const me);
 static void gui_long_press_tick(Gui * const me);
 static void gui_details_navigate(Gui * const me, kdrv_button_t b, bool pressed);
@@ -4022,7 +4022,7 @@ static void gui_dump(Gui * const me)
                        gui_sheet_kind_name(me->sheet), (unsigned)left);
             }
         }
-        if ( GUI_SHEET_REMOVING == me->sheet )
+        if ( me->rm_out )
         {
             KLOG_N(TAG, "  remove: %s asked %u ms ago", me->rm_name,
                    (unsigned)(khal_time_ms() - me->rm_since_ms));
@@ -12590,9 +12590,10 @@ static int8_t gui_sheet_card_row(Gui const * const me)
  * the row's own model, and how it is drawn is the module's. This AO owns the
  * state around it - which sheet is up, what the buttons mean on it, what the
  * pill is worth - and posts, like everything that reaches an owner. The details
- * have one answer, Remove, and only for an installed app; it asks on a card of
- * its own, then the app is taken off by AO_AppMgr (gui_remove_go()) while a
- * locked card waits for the list to say so.
+ * have one answer, Remove, for an installed app and for a file that names its
+ * project; it asks on a card of its own, then AO_AppMgr takes everything of the
+ * app off the board (gui_remove_go()) while a locked card waits for the erase
+ * to say how it ended (APP_ERASE_DONE_SIG).
  */
 
 /**
@@ -12628,24 +12629,89 @@ static uint32_t gui_row_size_of(Gui const * const me, GuiRow const * const r)
 }
 
 /**
- * @brief Whether a copy of an installed app's image stays on the SD card.
+ * @brief Whether the list shows a file of an app, on either medium.
  *
- * What the question before Remove may promise: the file the launcher lists
- * for the same project, on the card, is not touched by the erase.
+ * What the question before Remove says goes too: the erase deletes every
+ * image file of the project, on the card and on the internal partition.
  *
  * @param me      The AO.
- * @param project The installed app's project name.
- * @return true when a listed file of that project is on the card.
+ * @param project The app's project name.
+ * @return true when a listed file is of that project.
  */
-static bool gui_remove_copy_stays(Gui const * const me, const char *project)
+static bool gui_remove_has_files(Gui const * const me, const char *project)
 {
-    bool stays = false;
+    bool found = false;
 
-    for ( uint8_t i = 0U; (i < me->entry_count) && !stays; ++i )
+    for ( uint8_t i = 0U; (i < me->entry_count) && !found; ++i )
     {
-        stays = me->entries[i].from_sd && (strcmp(me->entries[i].project, project) == 0);
+        found = (strcmp(me->entries[i].project, project) == 0);
     }
-    return stays;
+    return found;
+}
+
+/**
+ * @brief Whether Remove has something to name for a row.
+ *
+ * An installed app by its project name; a file that is not installed by the
+ * project its descriptor names, which is what the erase matches files by. A
+ * file that names none has no Remove.
+ *
+ * @param me The AO.
+ * @param r  The row: which model, and where in it.
+ * @return true when the row can be removed.
+ */
+static bool gui_row_removable(Gui const * const me, GuiRow const * const r)
+{
+    bool removable = false;
+
+    if ( GUI_ROW_INSTALLED == r->kind )
+    {
+        removable = true;
+    }
+    else if ( GUI_ROW_FILE == r->kind )
+    {
+        removable = ('\0' != me->entries[r->idx].project[0]);
+    }
+    else
+    {
+        /* A kind with no app behind it. */
+    }
+    return removable;
+}
+
+/**
+ * @brief Keep what the Remove cards say and what the erase names, from a row.
+ *
+ * @param me The AO.
+ * @param r  The row the details are about.
+ * @return true when the row can be removed and its names are kept.
+ */
+static bool gui_remove_name(Gui * const me, GuiRow const * const r)
+{
+    const char *project = NULL;
+
+    if ( GUI_ROW_INSTALLED == r->kind )
+    {
+        if ( gui_installed_has(me, me->installed[r->idx].name) )
+        {
+            project = me->installed[r->idx].name;
+        }
+    }
+    else if ( gui_row_removable(me, r) )
+    {
+        project = me->entries[r->idx].project;
+    }
+    else
+    {
+        /* Nothing to name. */
+    }
+    if ( NULL != project )
+    {
+        me->rm_installed = (GUI_ROW_INSTALLED == r->kind);
+        (void)snprintf(me->rm_name, sizeof(me->rm_name), "%s", project);
+        (void)snprintf(me->rm_label, sizeof(me->rm_label), "%s", gui_row_face_of(me, r)->name);
+    }
+    return NULL != project;
 }
 
 /**
@@ -12807,14 +12873,14 @@ static void gui_details_fill(Gui * const me)
         spec.size        = size;
         spec.built       = built;
         spec.description = face->description;
-        spec.removable   = (GUI_ROW_INSTALLED == r->kind);
+        spec.removable   = gui_row_removable(me, r);
         kgui_details_info(&spec);
         kgui_details_ring(me->pad);
     }
 }
 
 /**
- * @brief Write the question before Remove: who, and what stays.
+ * @brief Write the question before Remove: who, and what goes with it.
  *
  * @param me The AO.
  */
@@ -12829,7 +12895,7 @@ static void gui_remove_fill(Gui * const me)
         gui_sheet_close(me);
         return;
     }
-    kgui_details_ask(me->rm_label, gui_remove_copy_stays(me, me->rm_name));
+    kgui_details_ask(me->rm_label, gui_remove_has_files(me, me->rm_name));
     kgui_details_ring(me->pad);
 }
 
@@ -12848,7 +12914,7 @@ static void gui_removing_fill(Gui * const me)
         return;
     }
     /* NOTHING TO PRESS, and the card is what enforces it: no pad and no tap
-     * until the list says the app is gone, or the wait runs out. */
+     * until AO_AppMgr says the erase ended, or the wait runs out. */
     me->sheet_locked = true;
     kgui_details_wait(me->rm_label);
 }
@@ -12856,8 +12922,8 @@ static void gui_removing_fill(Gui * const me)
 /**
  * @brief The pill was pressed: the details ask, or the question is answered.
  *
- * On the details, an installed app's name is kept and the card turns into
- * the question; on the question, the erase goes (gui_remove_go()).
+ * On the details, the row's names are kept (gui_remove_name()) and the card
+ * turns into the question; on the question, the erase goes (gui_remove_go()).
  *
  * @param me The AO.
  */
@@ -12867,17 +12933,21 @@ static void gui_details_act(Gui * const me)
     {
         KLOG_D(TAG, "remove: an answer is on its way; this one is ignored");
     }
+    else if ( me->rm_out )
+    {
+        /* ONE ERASE AT A TIME: the end of the one that is out is awaited by
+         * the names kept for it (a card left with home does not end it), and
+         * AO_AppMgr would refuse a second while it works. */
+        KLOG_N(TAG, "remove: the erase of %s is still out; this one is refused", me->rm_name);
+        kgui_hint(kgui_dtext_remove_end((uint8_t)KODE_DENIED));
+    }
     else if ( GUI_SHEET_DETAILS == me->sheet )
     {
         GuiRow target = { GUI_ROW_INSTALLED, 0U, 0U };
         int8_t row    = -1;
 
-        if ( gui_details_target(me, &target, &row) && (GUI_ROW_INSTALLED == target.kind)
-            && gui_installed_has(me, me->installed[target.idx].name) )
+        if ( gui_details_target(me, &target, &row) && gui_remove_name(me, &target) )
         {
-            (void)snprintf(me->rm_name, sizeof(me->rm_name), "%s", me->installed[target.idx].name);
-            (void)snprintf(me->rm_label, sizeof(me->rm_label), "%s",
-                           me->installed[target.idx].face.name);
             (void)kgui_haptic_play(KGUI_HAPTIC_CLICK);
             me->rm_busy = true;
             gui_sheet_open_kind(me, GUI_SHEET_REMOVE);
@@ -12889,7 +12959,7 @@ static void gui_details_act(Gui * const me)
         {
             KLOG_D(TAG, "remove: the question takes no answer yet");
         }
-        else if ( !gui_installed_has(me, me->rm_name) )
+        else if ( me->rm_installed && !gui_installed_has(me, me->rm_name) )
         {
             /* The app left while the question stood (the console, another
              * write): there is nothing to erase, and the question goes as
@@ -12897,7 +12967,7 @@ static void gui_details_act(Gui * const me)
             KLOG_N(TAG, "remove: %s had already left the list; nothing is asked",
                    me->rm_name);
             me->rm_since_ms = khal_time_ms();
-            gui_remove_done(me, true);
+            gui_remove_done(me, (uint8_t)KODE_OK);
         }
         else
         {
@@ -12913,12 +12983,12 @@ static void gui_details_act(Gui * const me)
 }
 
 /**
- * @brief The question is answered yes: AO_AppMgr is asked to erase the app,
- *        the apps are asked about again, and the card turns into the wait.
+ * @brief The question is answered yes: AO_AppMgr is asked to take everything
+ *        of the app off the board, and the card turns into the wait.
  *
- * AO_AppMgr does not answer an erase, so the list is what says it happened:
- * gui_remove_tick() watches it. The erase is posted before the question about
- * the apps, to the same queue, so the answer follows it.
+ * AO_AppMgr publishes the end of every erase (APP_ERASE_DONE_SIG), a refusal
+ * included: gui_remove_ended() takes the one that names this app, and
+ * gui_remove_tick() bounds the wait for it.
  *
  * @param me The AO.
  */
@@ -12927,75 +12997,156 @@ static void gui_remove_go(Gui * const me)
     KLOG_N(TAG, "remove: %s asked of AO_AppMgr", me->rm_name);
     appmgr_erase_request(me->rm_name);
     me->rm_since_ms = khal_time_ms();
-    me->rm_poll_ms  = me->rm_since_ms;
-    gui_request_installed(me);
+    me->rm_out      = true;
     gui_sheet_open_kind(me, GUI_SHEET_REMOVING);
 }
 
 /**
- * @brief The wait is over: the card goes, and the launcher says what happened.
+ * @brief Whether kgui/last names an app: its project, or a file of it the
+ *        list shows.
  *
- * @param me   The AO.
- * @param gone true when the app has left the list.
+ * @param me      The AO.
+ * @param last    What kgui/last holds.
+ * @param project The app's project name.
+ * @return true when the row launched last is that app's.
  */
-static void gui_remove_done(Gui * const me, bool gone)
+static bool gui_last_is_of(Gui const * const me, const char *last, const char *project)
 {
+    bool is_of = (strcmp(last, project) == 0);
+
+    for ( uint8_t i = 0U; (i < me->entry_count) && !is_of; ++i )
+    {
+        is_of = (strcmp(me->entries[i].name, last) == 0)
+                && (strcmp(me->entries[i].project, project) == 0);
+    }
+    return is_of;
+}
+
+/**
+ * @brief Forget an app that has left the board: kgui/last when it names it,
+ *        and its place in the recents.
+ *
+ * A store that refuses leaves a name no row answers to, which the next boot
+ * reads as no row at all.
+ *
+ * @param me      The AO.
+ * @param project The project name of the app that left.
+ */
+static void gui_forget_app(Gui * const me, const char *project)
+{
+    char last[KODE_APP_FILE_MAX];
+
+    if ( (khal_nvs_get_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_LAST, last, sizeof(last)) == KODE_OK)
+        && gui_last_is_of(me, last, project) )
+    {
+        if ( khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_LAST) != KODE_OK )
+        {
+            KLOG_W(TAG, "the store refused to forget kgui/%s", GUI_NVS_KEY_LAST);
+        }
+    }
+    if ( kgui_recents_drop(me->recents, project) )
+    {
+        if ( khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_RECENTS, me->recents) != KODE_OK )
+        {
+            KLOG_W(TAG, "the store refused kgui/%s", GUI_NVS_KEY_RECENTS);
+        }
+    }
+}
+
+/**
+ * @brief The wait is over: the card goes, the launcher says how the erase
+ *        ended, and the lists are asked again.
+ *
+ * An erase that left nothing is said by the notice that names the app; any
+ * other end by a hint (kgui_dtext_remove_end()). The files and the apps are
+ * asked about again either way, so the rows are what the media hold now.
+ *
+ * @param me     The AO.
+ * @param status How the erase ended: AppEraseDoneEvt.status, or KODE_TIMEOUT
+ *               when no end came.
+ */
+static void gui_remove_done(Gui * const me, uint8_t status)
+{
+    const char * const words = kgui_dtext_remove_end(status);
+
     me->sheet_locked = false;
     me->rm_busy      = false;
-    if ( gone )
+    me->rm_out       = false;
+    if ( NULL == words )
     {
         char t[48];
 
-        KLOG_N(TAG, "remove: %s left the list after %u ms", me->rm_name,
+        KLOG_N(TAG, "remove: %s left the board after %u ms", me->rm_name,
                (unsigned)(khal_time_ms() - me->rm_since_ms));
         (void)snprintf(t, sizeof(t), "%.32s was removed", me->rm_label);
         gui_visit(me, GUI_VISIT_NOTICE, t);
     }
     else
     {
-        KLOG_W(TAG, "remove: %s is still listed after %u ms; nothing else was erased",
-               me->rm_name, (unsigned)GUI_REMOVE_WAIT_MS);
-        kgui_hint(GUI_HINT_REMOVE_FAILED);
+        KLOG_W(TAG, "remove: the erase of %s ended with code %u after %u ms: %s",
+               me->rm_name, (unsigned)status,
+               (unsigned)(khal_time_ms() - me->rm_since_ms), words);
+        kgui_hint(words);
     }
-    gui_sheet_close(me);
+    gui_request_list(me);
+    gui_request_installed(me);
+    if ( (GUI_SHEET_REMOVING == me->sheet) || (GUI_SHEET_REMOVE == me->sheet) )
+    {
+        gui_sheet_close(me);
+    }
 }
 
 /**
- * @brief The Removing card's share of the tick.
+ * @brief AO_AppMgr says an erase ended: this launcher's, or somebody else's.
  *
- * Done when a finished round of the apps no longer lists the app, or when
- * GUI_REMOVE_WAIT_MS has passed. While it is still listed, the apps are asked
- * again every GUI_REMOVE_POLL_MS - when no round is out, or when the one that
- * is out has had no answer for that long: AO_AppMgr ignores a list request
- * while it writes, and a round that never came must not leave the card
- * waiting for it.
+ * Whoever asked, an app that left the board is forgotten here too
+ * (gui_forget_app()). The cards and the rescan are only for the erase this
+ * launcher asked for, by the name it gave.
+ *
+ * @param me The AO.
+ * @param d  The end of the erase.
+ */
+static void gui_remove_ended(Gui * const me, AppEraseDoneEvt const * const d)
+{
+    bool const mine = me->rm_out && (strcmp(d->name, me->rm_name) == 0);
+
+    if ( ((uint8_t)KODE_OK == d->status) || ((uint8_t)KODE_IO_ERROR == d->status) )
+    {
+        gui_forget_app(me, d->name);
+    }
+    if ( mine )
+    {
+        const char *image = "none";
+        const char *card  = "absent";
+
+        if ( d->image )
+        {
+            image = "removed";
+        }
+        if ( d->sd.present )
+        {
+            card = "there";
+        }
+        KLOG_N(TAG, "remove: %s: image %s; partition %u gone, %u left; card %s, %u gone, %u left",
+               d->name, image, (unsigned)d->fs.files, (unsigned)d->fs.left,
+               card, (unsigned)d->sd.files, (unsigned)d->sd.left);
+        gui_remove_done(me, d->status);
+    }
+}
+
+/**
+ * @brief The Remove's share of the tick: the bound on the wait for its end.
+ *
+ * AO_AppMgr answers every erase; GUI_REMOVE_WAIT_MS is past the longest it
+ * waits for AO_Storage, so reaching it means the end was lost.
  *
  * @param me The AO.
  */
 static void gui_remove_tick(Gui * const me)
 {
-    if ( GUI_SHEET_REMOVING == me->sheet )
+    if ( me->rm_out && ((khal_time_ms() - me->rm_since_ms) >= GUI_REMOVE_WAIT_MS) )
     {
-        uint32_t const now = khal_time_ms();
-
-        if ( !me->apps_out && !gui_installed_has(me, me->rm_name) )
-        {
-            gui_remove_done(me, true);
-        }
-        else if ( (now - me->rm_since_ms) >= GUI_REMOVE_WAIT_MS )
-        {
-            gui_remove_done(me, false);
-        }
-        else if ( ((now - me->rm_poll_ms) >= GUI_REMOVE_POLL_MS)
-                 && (!me->apps_out || ((now - me->list_out_ms) >= GUI_REMOVE_POLL_MS)) )
-        {
-            me->rm_poll_ms = now;
-            gui_request_installed(me);
-        }
-        else
-        {
-            /* Waiting for the round that is out. */
-        }
+        gui_remove_done(me, (uint8_t)KODE_TIMEOUT);
     }
 }
 
@@ -21410,8 +21561,8 @@ static void gui_sheet_fill(Gui * const me)
         case GUI_SHEET_DETAILS: {
             /* THE ROW, READ OUT: the face it wears, what it calls itself and
              * the line it declared. Its one answer is Remove, the pad's top
-             * button and a tap on the glass alike, for an installed app
-             * only; it stands on the card as the module's own pill, not as
+             * button and a tap on the glass alike, for an installed app and
+             * for a file that names its project; it stands on the card as the module's own pill, not as
              * the kit's button (gui_details_fill()). */
             gui_details_fill(me);
             break;
@@ -21422,7 +21573,7 @@ static void gui_sheet_fill(Gui * const me)
             break;
         }
         case GUI_SHEET_REMOVING: {
-            /* THE WAIT while the app leaves the list (gui_removing_fill()). */
+            /* THE WAIT while the app leaves the board (gui_removing_fill()). */
             gui_removing_fill(me);
             break;
         }
@@ -32561,6 +32712,7 @@ static QState Gui_initial(Gui * const me, void const * const par)
     QActive_subscribe(&me->super, APP_FLASH_PROGRESS_SIG);
     QActive_subscribe(&me->super, APP_FLASH_DONE_SIG);
     QActive_subscribe(&me->super, APP_FLASH_FAIL_SIG);
+    QActive_subscribe(&me->super, APP_ERASE_DONE_SIG);
 #if CONFIG_KODE_TEST_DOT
     /* AO_TestDot's screens and patterns: the E5 test takes the glass. */
     QActive_subscribe(&me->super, TEST_DOT_SCREEN_REQ_SIG);
@@ -33429,6 +33581,13 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
              * alone and wherever the interface stands: the wait card it
              * answers is a kind of the one card, like the writes' above. */
             gui_reset_answer(me, Q_EVT_CAST(FactoryResetRspEvt));
+            status = Q_HANDLED();
+            break;
+        }
+        case APP_ERASE_DONE_SIG: {
+            /* The end of an erase, whoever asked for it: the Removing card's
+             * answer, and the moment an app that left is forgotten. */
+            gui_remove_ended(me, Q_EVT_CAST(AppEraseDoneEvt));
             status = Q_HANDLED();
             break;
         }
@@ -36812,7 +36971,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 /* The pad is refused here for the reason gui_sheet_navigate()
                  * gives, and a held bottom button is the pad. The Removing
                  * card is the one locked card home may leave: the erase is
-                 * AO_AppMgr's by then, and the list says the rest. */
+                 * AO_AppMgr's by then, and its end is taken with no card up. */
                 (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
                 status = Q_HANDLED();
             }
@@ -36848,7 +37007,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 if ( GUI_SHEET_REMOVING == me->sheet )
                 {
                     KLOG_N(TAG, "remove: home leaves the wait for %s; the erase "
-                                "is AO_AppMgr's and the list says the rest",
+                                "is AO_AppMgr's and its end is still taken",
                            me->rm_name);
                 }
                 if ( home == Q_STATE_CAST(&Gui_browsing) )
