@@ -41,6 +41,25 @@ const char *kgui_radio_words(kgui_radio_view_t const *v)
     return words;
 }
 
+const char *kgui_ble_pair_words(bool open, bool wait, bool linked)
+{
+    const char *words = NULL;
+
+    if ( wait || (open && linked) )
+    {
+        words = "When the other leaves";
+    }
+    else if ( open )
+    {
+        words = "Visible to new devices";
+    }
+    else
+    {
+        /* Not asked for: the row says its name and nothing else. */
+    }
+    return words;
+}
+
 const char *kgui_wifi_fail_words(uint8_t fail)
 {
     const char *words = "Could not join";
