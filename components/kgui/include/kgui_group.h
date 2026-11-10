@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /**
  * @file kgui_group.h
- * @brief The launcher's groups: the apps filed by their first category.
+ * @brief The launcher's groups: All, which holds every app, and the apps
+ *        filed by their first category.
  */
 #ifndef KGUI_GROUP_H
 #define KGUI_GROUP_H
@@ -15,11 +16,13 @@ extern "C" {
 
 /* ---- Limits ---- */
 
-#define KGUI_GROUP_MAX        21U  /**< Most groups at the root: every folder of the table; the apps of any more are loose. */
+#define KGUI_GROUP_MAX        21U  /**< Most groups at the root: every folder of the table, All among them; the apps of any more are loose. */
 #define KGUI_GROUP_NAME_MAX   16U  /**< A group's name, terminator included (KAPP_CATEGORY_ITEM_MAX). */
 #define KGUI_GROUP_CATS_LEN   64U  /**< One app's category list, terminator included (KAPP_CATEGORY_MAX). */
 #define KGUI_GROUP_ART_N      21U  /**< The folders the table draws: each has its glyph. */
 #define KGUI_GROUP_MONO_MAX   9U   /**< A folder's letters: two UTF-8 characters and the terminator. */
+
+#define KGUI_GROUP_ALL        "all"  /**< The folder every root has: it holds every app. */
 
 /* ---- Rows ---- */
 
@@ -28,11 +31,11 @@ extern "C" {
 
 /** @brief One group at the root. */
 typedef struct {
-    char    name[KGUI_GROUP_NAME_MAX];  /**< The group's key: the first category, lowercased (the table's word for those it has). */
+    char    name[KGUI_GROUP_NAME_MAX];  /**< The group's key: KGUI_GROUP_ALL, or a first category, lowercased (the table's word for those it has). */
     uint8_t count;                      /**< How many apps it holds. */
 } kgui_group_t;
 
-/** @brief One row of the root: a group, or an app with none. */
+/** @brief One row of the root: a group, or an app whose own the cap left out. */
 typedef struct {
     uint8_t kind;  /**< KGUI_GROUP_ROW_GROUP or KGUI_GROUP_ROW_APP. */
     uint8_t idx;   /**< Into the groups array or into the apps, by kind. */
@@ -43,7 +46,10 @@ typedef struct {
 /**
  * @brief Build the root: the groups, then the loose apps.
  *
- * Groups come in the table's order (games, tools, communication, wireless,
+ * All comes first and holds every app; a root with no app has no group. An
+ * app is also in the group of its first category, and an app with none (an
+ * empty list, or `other`, `general` or `all` first) is in All alone. The
+ * categories come in the table's order (games, tools, communication, wireless,
  * creative, maker, ai, sensors, radio, security, music, camera, robotics,
  * home, health, navigation, time, productivity, education, developer), then
  * any other word alphabetically, whatever the
@@ -72,8 +78,8 @@ uint8_t kgui_group_root(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
  * @brief List the apps of one group, in order.
  *
  * A name that holds no app (the group is gone, or never was) gives 0, and
- * the caller falls back to the root. The empty name and `other` never name
- * a group.
+ * the caller falls back to the root. KGUI_GROUP_ALL lists every app, and so
+ * do the empty name and `other`, which are All.
  *
  * The answer is by name alone and knows nothing of the cap on groups
  * (KGUI_GROUP_MAX): a group the cap made loose at the root still lists its
@@ -94,16 +100,18 @@ uint8_t kgui_group_members(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
  * @brief The group one app's category list files it under.
  *
  * The same rule kgui_group_root() uses: the first item of the list, lowercased;
- * an empty list, or one that starts with `other`, files the app nowhere.
+ * an empty list, or one that starts with `other`, `general` or `all`, files
+ * the app under All alone.
  *
  * @param cats One app's category list.
- * @param name Out: the group's name, KGUI_GROUP_NAME_MAX bytes; empty for none.
- * @return true when the list names a group.
+ * @param name Out: the group's name, KGUI_GROUP_NAME_MAX bytes; KGUI_GROUP_ALL
+ *             for an app with no category of its own.
+ * @return true when @p name is written; false for a NULL argument.
  */
 bool kgui_group_of(const char *cats, char *name);
 
 /**
- * @brief The standard glyph of a group: the table's (`games`, `tool`, `talk`,
+ * @brief The standard glyph of a group: the table's (`apps`, `games`, `tool`, `talk`,
  *        `wifi`, `brush`, `maker`, `spark`, `gauge`, `antenna`, `shield`,
  *        `note`, `camera`, `robot`, `home`, `heart`, `pin`, `clock`, `list`,
  *        `book`, `code`), and none for any other name.
@@ -136,9 +144,9 @@ bool kgui_group_rgb(const char *group, uint32_t *rgb);
  * The table's title for a word it has (`ai` is `AI`, `games` is `Games`),
  * any other word with its first letter a capital and nothing else changed.
  *
- * @param group A group's name in any case and either form; NULL, "" and
- *              `other` name none.
- * @param out   Out: KGUI_GROUP_NAME_MAX bytes; empty for none.
+ * @param group A group's name in any case and either form; "" and `other`
+ *              are All.
+ * @param out   Out: KGUI_GROUP_NAME_MAX bytes; empty for NULL.
  */
 void kgui_group_title(const char *group, char *out);
 
