@@ -186,7 +186,7 @@ ART = {
         ("C", line('<path d="M6.6 8.8l3.4 3.2-3.4 3.2"/>')),
         ("Y", fill('<rect x="12" y="13.4" width="6" height="2.6" rx=".4"/>')),
     ]),
-    "general": ("General", "Three in a row and the one that does not fit", [
+    "all": ("All", "Every app, and the one that will not sit still", [
         ("K", fill('<rect x="3.2" y="3.2" width="6.8" height="6.8" rx="1.3"/>', 1.0)),
         ("K", fill('<rect x="13.2" y="3.2" width="6.8" height="6.8" rx="1.3"/>', 1.0)),
         ("K", fill('<rect x="3.2" y="13.2" width="6.8" height="6.8" rx="1.3"/>', 1.0)),

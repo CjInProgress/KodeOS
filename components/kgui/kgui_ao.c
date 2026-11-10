@@ -702,9 +702,9 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
 #define GUI_ROW_LIT        1U
 #define GUI_ROW_UNDRESSED  0xFFU
 
-/* The launcher's two levels (GuiStateEvt::level): the root, which holds the
- * groups and then the apps that belong to none, and one group's apps. */
-#define GUI_LEVEL_ROOT   KODE_GUI_LEVEL_ROOT   /* the groups, then the loose apps */
+/* The launcher's two levels (GuiStateEvt::level): the root, which holds All,
+ * the groups and then the apps whose group did not fit, and one group's apps. */
+#define GUI_LEVEL_ROOT   KODE_GUI_LEVEL_ROOT   /* All and the groups, then the loose apps */
 #define GUI_LEVEL_GROUP  KODE_GUI_LEVEL_GROUP  /* the apps of the group in me->group */
 
 /* A group row's selection name: this and the group's name. An app's own name
@@ -1906,12 +1906,13 @@ typedef struct {
     int8_t    sel_idx;
     char      sel_name[KODE_APP_FILE_MAX];
 
-    /* THE LEVEL. The launcher shows its root, the groups and then the apps
-     * that belong to none (kgui_group_root()), or one group's apps
-     * (kgui_group_members()). A group is a view of the apps' first category,
-     * never data: it is derived in the pass that builds rows[], so an empty
-     * group cannot exist. group is the truth about where the launcher is;
-     * when the apps of it are gone the pass falls back to the root.
+    /* THE LEVEL. The launcher shows its root, All and the groups and then
+     * the apps whose group did not fit (kgui_group_root()), or one group's
+     * apps (kgui_group_members()). All is every app and a group is a view of
+     * the apps' first category, never data: both are derived in the pass that
+     * builds rows[], so an empty group cannot exist. group is the truth about
+     * where the launcher is; when the apps of it are gone the pass falls back
+     * to the root.
      *
      * The selection is kept by name for each level: sel_name for the level on
      * the glass, and sel_root for the root while a group is open, so going
@@ -12728,6 +12729,7 @@ static void gui_details_fill(Gui * const me)
         lv_color_t const      ground = gui_light_ground(face);
         kgui_details_spec_t   spec;
         char                  mono[3];
+        char                  own[KGUI_GROUP_NAME_MAX];
         char                  group[KGUI_GROUP_NAME_MAX];
         char                  meta[KGUI_DTEXT_META_MAX];
         char                  size[KGUI_DTEXT_SIZE_MAX];
@@ -12744,7 +12746,12 @@ static void gui_details_fill(Gui * const me)
         }
         gui_mono_letters(face, mono);
         spec.mono = mono;
-        kgui_group_title(face->category, group);
+        /* All is where every app is, not a category to say of one. */
+        group[0] = '\0';
+        if ( kgui_group_of(face->category, own) && (strcmp(own, KGUI_GROUP_ALL) != 0) )
+        {
+            kgui_group_title(own, group);
+        }
         kgui_dtext_meta(face->version, group, meta, sizeof(meta));
         kgui_dtext_size(gui_row_size_of(me, r), size, sizeof(size));
         built[0] = '\0';
@@ -14403,9 +14410,9 @@ static void gui_return_check(Gui * const me)
 /**
  * @brief Put the list where the app left it: its group, and the rows.
  *
- * The launcher opens the group the app is filed under (kgui_group_of()), or
- * stays at the root for an app that is in none; the selection lands on the app
- * by its name: the one that ran (gui_last_follow_offset()), or kgui/last when
+ * The launcher opens the group the app is filed under (kgui_group_of()):
+ * its first category's, or All for an app with none; the selection lands on
+ * the app by its name: the one that ran (gui_last_follow_offset()), or kgui/last when
  * no installed app sits at the offset (gui_last_load()). The root keeps the
  * group's row as its selection, so going back lands on it.
  *
