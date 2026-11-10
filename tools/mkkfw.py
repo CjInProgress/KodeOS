@@ -44,16 +44,9 @@ and `payload length` still counts the payload alone:
 The sizes and offsets are KFW_AD_* in sdk/components/kdrv/apps/include/
 kdrv_kfw.h; the board checks the block with the parser the folder's reader
 uses, and validate() in kappdata.py is that parser's host twin.
-
-`--appdata-out DIR` also writes that block's app.json and icon.k64 into DIR,
-as the board stores them after an install: the data folder a factory pack
-carries beside an app it installs itself. parse() reads a container back,
-for the tool that builds that pack (tools/mkapps.py).
 """
 import argparse
 import hashlib
-import json
-import os
 import struct
 import sys
 import zlib
@@ -71,12 +64,6 @@ AD_MAGIC = b"KAD1"          # the block's own magic
 AD_HDR_LEN = 12             # magic, json_len, icon_len, crc
 AD_JSON_MAX = 1024          # KFW_AD_JSON_MAX: the longest app.json a block carries
 AD_ICON_LEN = kappdata.K64_BYTES   # KFW_AD_ICON_LEN: the one icon size, 12288
-AD_ICON_NAME = "icon.k64"   # what the icon key reads once an icon is packed
-AD_JSON_NAME = "app.json"   # the data folder's other file
-HDR_FIXED = "<4sHHBBHII32s"  # the header up to its CRC: 52 bytes
-HDR_CRC_OFF = struct.calcsize(HDR_FIXED)
-AD_HDR = "<4sHHI"           # the block's header: magic, json_len, icon_len, crc
-COMPRESSION = (0, 1)        # none, deflate
 
 
 def esp_crc32(data: bytes) -> int:
@@ -104,7 +91,7 @@ def appdata_block(json_bytes: bytes, icon: bytes) -> bytes:
     if len(icon) not in (0, AD_ICON_LEN):
         raise ValueError(f"icon: {len(icon)} bytes, must be 0 or {AD_ICON_LEN}")
     body = json_bytes + icon
-    head = struct.pack(AD_HDR, AD_MAGIC, len(json_bytes), len(icon),
+    head = struct.pack("<4sHHI", AD_MAGIC, len(json_bytes), len(icon),
                        esp_crc32(body))
     if len(head) != AD_HDR_LEN:
         raise AssertionError(f"block header is {len(head)} bytes, "
@@ -118,115 +105,7 @@ def load_appdata(folder: str) -> tuple:
     Raises ValueError naming the field that the board would refuse. The icon
     comes back empty when the folder has none.
     """
-    path = os.path.join(folder, "app.json")
-    try:
-        with open(path, "rb") as fh:
-            obj = kappdata.validate(json.loads(fh.read()))
-    except OSError as exc:
-        raise ValueError(f"cannot read {path}: {exc}") from exc
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"{path}: {exc}") from exc
-
-    icon = b""
-    icon_path = kappdata.find_icon(folder, obj)
-    if icon_path:
-        try:
-            icon = kappdata.to_k64(icon_path)
-        except ImportError as exc:
-            raise ValueError(f"icon: {icon_path} needs Pillow "
-                             "(python3 -m pip install pillow)") from exc
-        except OSError as exc:      # Pillow's "cannot identify image file"
-            raise ValueError(f"icon: {icon_path}: {exc}") from exc
-        obj["icon"] = AD_ICON_NAME   # the board reads what is packed
-    elif "icon" in obj:
-        raise ValueError(f"icon: {obj['icon']} is not in {folder}")
-    body = json.dumps(obj, separators=(",", ":")).encode("ascii")
-    if len(body) > AD_JSON_MAX:
-        raise ValueError(f"app.json: {len(body)} bytes once written, "
-                         f"longer than {AD_JSON_MAX}")
-    return body, icon
-
-
-def write_appdata(folder: str, appdata: tuple) -> None:
-    """Leave in `folder` exactly what the board stores after an install.
-
-    app.json, and icon.k64 when the block carries one. Anything else that was
-    in the folder goes: a pack is built from it, and a file of an older build
-    would travel to every board.
-    """
-    json_bytes, icon = appdata
-    os.makedirs(folder, exist_ok=True)
-    for old in os.listdir(folder):
-        os.remove(os.path.join(folder, old))
-    with open(os.path.join(folder, AD_JSON_NAME), "wb") as fh:
-        fh.write(json_bytes)
-    if icon:
-        with open(os.path.join(folder, AD_ICON_NAME), "wb") as fh:
-            fh.write(icon)
-
-
-def parse(blob: bytes) -> dict:
-    """Read a container back: its target, name, app data and image.
-
-    Checks what the board checks before it trusts one: the header's CRC, the
-    app-data block's CRC, the lengths, and the SHA-256 of the image once it is
-    out of its payload. Raises ValueError naming what is wrong.
-
-    Returns {"target", "name", "appdata", "image"}; `appdata` is
-    (json_bytes, icon_bytes) or None.
-    """
-    if len(blob) < HDR_LEN or blob[:4] != MAGIC:
-        raise ValueError("not a kfw container")
-    (_, version, hdr_len, target, compression, flags, payload_len, image_len,
-     digest) = struct.unpack_from(HDR_FIXED, blob, 0)
-    (crc,) = struct.unpack_from("<I", blob, HDR_CRC_OFF)
-    if crc != esp_crc32(blob[:HDR_CRC_OFF]):
-        raise ValueError("the header's CRC does not match")
-    if version != HDR_VERSION or hdr_len != HDR_LEN:
-        raise ValueError(f"header version {version}, length {hdr_len}: "
-                         f"this tool reads version {HDR_VERSION}, {HDR_LEN} bytes")
-    if target not in TARGETS.values():
-        raise ValueError(f"unknown target {target}")
-    if compression not in COMPRESSION:
-        raise ValueError(f"unknown compression {compression}")
-    if flags & ~FLAG_APPDATA:
-        raise ValueError(f"reserved flags are set: 0x{flags:04x}")
-    name = blob[HDR_CRC_OFF + 4:HDR_LEN].split(b"\x00", 1)[0].decode("ascii", "replace")
-
-    at = HDR_LEN
-    appdata = None
-    if flags & FLAG_APPDATA:
-        if target != TARGETS["app"]:
-            raise ValueError("only an app container carries app data")
-        if len(blob) < at + AD_HDR_LEN:
-            raise ValueError("the container ends inside its app-data block")
-        ad_magic, json_len, icon_len, ad_crc = struct.unpack_from(AD_HDR, blob, at)
-        if ad_magic != AD_MAGIC:
-            raise ValueError("the app-data block's magic is wrong")
-        if not 0 < json_len <= AD_JSON_MAX or icon_len not in (0, AD_ICON_LEN):
-            raise ValueError(f"app-data block: json {json_len} bytes, icon {icon_len}")
-        body = blob[at + AD_HDR_LEN:at + AD_HDR_LEN + json_len + icon_len]
-        if len(body) != json_len + icon_len:
-            raise ValueError("the container ends inside its app-data block")
-        if ad_crc != esp_crc32(body):
-            raise ValueError("the app-data block's CRC does not match")
-        appdata = (body[:json_len], body[json_len:])
-        at += AD_HDR_LEN + len(body)
-
-    if len(blob) - at != payload_len:
-        raise ValueError(f"the payload is {len(blob) - at} bytes, the header says "
-                         f"{payload_len}")
-    image = blob[at:]
-    if compression == 1:
-        try:
-            image = zlib.decompress(image)
-        except zlib.error as exc:
-            raise ValueError(f"the payload does not inflate: {exc}") from exc
-    if len(image) != image_len:
-        raise ValueError(f"the image is {len(image)} bytes, the header says {image_len}")
-    if hashlib.sha256(image).digest() != digest:
-        raise ValueError("the image's SHA-256 does not match the header")
-    return {"target": target, "name": name, "appdata": appdata, "image": image}
+    return kappdata.load(folder)
 
 
 def build(image: bytes, target: int, name: str, compress: bool,
@@ -244,7 +123,7 @@ def build(image: bytes, target: int, name: str, compress: bool,
         block = appdata_block(*appdata)
     payload = zlib.compress(image, 9) if compress else image
     head = struct.pack(
-        HDR_FIXED,
+        "<4sHHBBHII32s",
         MAGIC,
         HDR_VERSION,
         HDR_LEN,
@@ -273,10 +152,6 @@ def main() -> int:
     ap.add_argument("--appdata", metavar="DIR",
                     help="pack DIR's app.json and icon into the container "
                          "(--target app only)")
-    ap.add_argument("--appdata-out", metavar="DIR",
-                    help="also leave in DIR the app.json and icon.k64 the "
-                         "container carries, as the board stores them "
-                         "(needs --appdata)")
     ap.add_argument("input", help="the .bin to wrap")
     ap.add_argument("output", help="the .kfw to write")
     a = ap.parse_args()
@@ -291,9 +166,6 @@ def main() -> int:
 
     if a.appdata is not None and a.target != "app":
         print("only an app container carries --appdata", file=sys.stderr)
-        return 1
-    if a.appdata_out is not None and a.appdata is None:
-        print("--appdata-out writes what --appdata packs: give both", file=sys.stderr)
         return 1
 
     appdata = None
@@ -332,12 +204,6 @@ def main() -> int:
     except OSError as exc:
         print(f"cannot write {a.output}: {exc}", file=sys.stderr)
         return 1
-    if a.appdata_out is not None:
-        try:
-            write_appdata(a.appdata_out, appdata)
-        except OSError as exc:
-            print(f"cannot write {a.appdata_out}: {exc}", file=sys.stderr)
-            return 1
 
     block_len = 0
     extra = ""

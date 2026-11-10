@@ -19,18 +19,8 @@ Every number is read from kapps_fmt.h and partitions.csv, the files the board
 is built from, so this tool cannot drift from the format it writes:
 
     tools/mkapps.py --project welcome welcome.bin apps.bin
-
-The app may come as a kfw (tools/mkkfw.py), which is how
-tools/build_welcome.sh leaves it: the image is taken out of the container
-after the container's own checks. An install on the board would also leave the
-container's app.json and icon in the app's data folder on the FAT; here the
-FAT image carries that folder, and `--appdata DIR` refuses a folder that is
-not the container's:
-
-    tools/mkapps.py --project welcome --appdata DIR welcome.kfw apps.bin
 """
 import argparse
-import os
 import re
 import struct
 import sys
@@ -101,45 +91,6 @@ def project_of(image: bytes) -> str:
     return raw.split(b"\x00", 1)[0].decode("ascii", "replace")
 
 
-def load(blob: bytes, project: str) -> tuple:
-    """(image, app data) of an app given as a kfw or as a raw image.
-
-    The app data is (json_bytes, icon_bytes) for a container that carries a
-    block, else None. A container must be an app's and carry the project's
-    name: it is the one `install` on the board would take.
-    """
-    if blob[:len(mkkfw.MAGIC)] != mkkfw.MAGIC:
-        return blob, None
-    parsed = mkkfw.parse(blob)
-    if parsed["target"] != mkkfw.TARGETS["app"]:
-        raise ValueError("the container is not an app's")
-    if parsed["name"] != project:
-        raise ValueError(f"the container is named '{parsed['name']}', not '{project}'")
-    return parsed["image"], parsed["appdata"]
-
-
-def check_appdata(folder: str, appdata: tuple) -> None:
-    """Refuse a data folder that is not exactly the container's app data."""
-    if appdata is None:
-        raise ValueError(f"{folder} cannot be checked: the app carries no app data "
-                         "(pack it with mkkfw.py --appdata)")
-    want = {mkkfw.AD_JSON_NAME: appdata[0]}
-    if appdata[1]:
-        want[mkkfw.AD_ICON_NAME] = appdata[1]
-    try:
-        have = sorted(os.listdir(folder))
-    except OSError as exc:
-        raise ValueError(f"cannot read {folder}: {exc}") from exc
-    if have != sorted(want):
-        raise ValueError(f"{folder} holds {', '.join(have) or 'nothing'}; the "
-                         f"container carries {', '.join(sorted(want))}")
-    for name, body in want.items():
-        with open(os.path.join(folder, name), "rb") as fh:
-            if fh.read() != body:
-                raise ValueError(f"{os.path.join(folder, name)} is not the "
-                                 "container's")
-
-
 def build(image: bytes, fmt: dict, region_size: int) -> bytes:
     """Return the region's bytes from its base to the end of `image`. Pure."""
     data_off = fmt["KAPPS_DATA_OFF"]
@@ -173,10 +124,7 @@ def main() -> int:
     ap.add_argument("--fmt", default=FMT_H, help=f"kapps_fmt.h (default {FMT_H})")
     ap.add_argument("--partitions", default=PARTITIONS_CSV,
                     help=f"the partition table (default {PARTITIONS_CSV})")
-    ap.add_argument("--appdata", metavar="DIR",
-                    help="the app's data folder in the FAT image; must hold "
-                         "exactly the container's app.json and icon.k64")
-    ap.add_argument("input", help="the app's .kfw, or its raw .bin")
+    ap.add_argument("input", help="the app's .bin")
     ap.add_argument("output", help="the region image to write")
     a = ap.parse_args()
 
@@ -184,9 +132,7 @@ def main() -> int:
         fmt = read_fmt(a.fmt)
         offset, size = read_region(a.partitions)
         with open(a.input, "rb") as fh:
-            image, appdata = load(fh.read(), a.project)
-        if a.appdata is not None:
-            check_appdata(a.appdata, appdata)
+            image = fh.read()
         project = project_of(image)
         if project != a.project:
             raise ValueError(f"{a.input} is the project '{project}', not '{a.project}'")

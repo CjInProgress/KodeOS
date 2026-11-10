@@ -255,8 +255,8 @@ jobs:
           name: release-dist
           path: |
             dist/kodeos-factory-v${{ steps.ver.outputs.version }}.zip
-            dist/kodeos-v${{ steps.ver.outputs.version }}.bin
-            dist/*-v${{ steps.ver.outputs.version }}.kfw
+            dist/*-v${{ steps.ver.outputs.version }}.bin
+            dist/*-v${{ steps.ver.outputs.version }}-appdata.zip
             dist/SHA256SUMS.txt
             dist/BUILD_INFO.txt
           if-no-files-found: error
@@ -289,6 +289,6 @@ jobs:
           gh release create "$TAG" --repo "$REPO" --draft --verify-tag \
              --title "kodeOS v$VERSION" --generate-notes \
              "dist/kodeos-factory-v$VERSION.zip" \
-             "dist/kodeos-v$VERSION.bin" \
-             dist/*-v"$VERSION".kfw \
+             dist/*-v"$VERSION".bin \
+             dist/*-v"$VERSION"-appdata.zip \
              dist/SHA256SUMS.txt dist/BUILD_INFO.txt

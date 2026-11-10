@@ -24,7 +24,6 @@ TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROOT = os.path.dirname(TOOLS)
 sys.path.insert(0, TOOLS)
 import mkapps  # noqa: E402
-import mkkfw  # noqa: E402
 
 FMT_H = os.path.join(ROOT, mkapps.FMT_H)
 PARTITIONS_CSV = os.path.join(ROOT, mkapps.PARTITIONS_CSV)
@@ -182,111 +181,6 @@ class RefusalTests(unittest.TestCase):
         _, size = mkapps.read_region(PARTITIONS_CSV)
         with self.assertRaises(ValueError):
             mkapps.build(fake_image("welcome", size - fmt["KAPPS_DATA_OFF"] + 1), fmt, size)
-
-
-def container(image: bytes, name: str, appdata: tuple = None,
-              target: str = "app") -> bytes:
-    """A kfw of `image`, as tools/build_welcome.sh leaves the welcome app."""
-    if target != "app":
-        name = ""
-    return mkkfw.build(image, mkkfw.TARGETS[target], name, True, appdata)
-
-
-APP_JSON = b'{"kode":"1","description":"A test app","icon":"icon.k64"}'
-ICON = bytes(range(256)) * (mkkfw.AD_ICON_LEN // 256)
-
-
-class ContainerTests(unittest.TestCase):
-    """The welcome app arrives as a kfw: its image and its data folder come out of it."""
-
-    def run_main(self, blob: bytes, project: str, folder: dict = None,
-                 with_folder: bool = False) -> tuple:
-        with tempfile.TemporaryDirectory() as tmp:
-            src = os.path.join(tmp, "app.kfw")
-            out = os.path.join(tmp, "apps.bin")
-            with open(src, "wb") as fh:
-                fh.write(blob)
-            args = ["mkapps.py", "--project", project, "--fmt", FMT_H,
-                    "--partitions", PARTITIONS_CSV]
-            if with_folder:
-                data = os.path.join(tmp, "data")
-                os.mkdir(data)
-                for name, body in (folder or {}).items():
-                    with open(os.path.join(data, name), "wb") as fh:
-                        fh.write(body)
-                args += ["--appdata", data]
-            argv = sys.argv
-            sys.argv = args + [src, out]
-            try:
-                rc = mkapps.main()
-            finally:
-                sys.argv = argv
-            written = b""
-            if os.path.exists(out):
-                with open(out, "rb") as fh:
-                    written = fh.read()
-            return rc, written
-
-    def test_takes_the_image_out_of_a_container(self):
-        image = fake_image("welcome")
-        rc, blob = self.run_main(container(image, "welcome"), "welcome")
-        self.assertEqual(rc, 0)
-        data = mkapps.read_fmt(FMT_H)["KAPPS_DATA_OFF"]
-        self.assertEqual(blob[data:data + len(image)], image)
-
-    def test_refuses_a_container_named_for_another_app(self):
-        rc, _ = self.run_main(container(fake_image("welcome"), "other"), "welcome")
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_container_that_is_not_an_app(self):
-        rc, _ = self.run_main(container(fake_image("welcome"), "", target="os"), "welcome")
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_damaged_container(self):
-        blob = bytearray(container(fake_image("welcome"), "welcome"))
-        blob[-1] ^= 1
-        rc, _ = self.run_main(bytes(blob), "welcome")
-        self.assertEqual(rc, 1)
-
-    def test_takes_a_data_folder_that_is_the_containers(self):
-        blob = container(fake_image("welcome"), "welcome", (APP_JSON, ICON))
-        rc, _ = self.run_main(blob, "welcome", {"app.json": APP_JSON, "icon.k64": ICON}, True)
-        self.assertEqual(rc, 0)
-
-    def test_refuses_a_data_folder_with_another_app_json(self):
-        blob = container(fake_image("welcome"), "welcome", (APP_JSON, ICON))
-        rc, _ = self.run_main(blob, "welcome", {"app.json": APP_JSON + b" ", "icon.k64": ICON}, True)
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_data_folder_with_another_icon(self):
-        blob = container(fake_image("welcome"), "welcome", (APP_JSON, ICON))
-        rc, _ = self.run_main(blob, "welcome", {"app.json": APP_JSON, "icon.k64": ICON[::-1]}, True)
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_data_folder_with_a_file_missing(self):
-        blob = container(fake_image("welcome"), "welcome", (APP_JSON, ICON))
-        rc, _ = self.run_main(blob, "welcome", {"app.json": APP_JSON}, True)
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_data_folder_with_a_file_too_many(self):
-        blob = container(fake_image("welcome"), "welcome", (APP_JSON, ICON))
-        rc, _ = self.run_main(blob, "welcome",
-                              {"app.json": APP_JSON, "icon.k64": ICON, "notes.txt": b"x"}, True)
-        self.assertEqual(rc, 1)
-
-    def test_refuses_an_icon_the_container_does_not_carry(self):
-        blob = container(fake_image("welcome"), "welcome", (APP_JSON, b""))
-        rc, _ = self.run_main(blob, "welcome", {"app.json": APP_JSON, "icon.k64": ICON}, True)
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_data_folder_for_a_container_with_no_app_data(self):
-        blob = container(fake_image("welcome"), "welcome")
-        rc, _ = self.run_main(blob, "welcome", {"app.json": APP_JSON}, True)
-        self.assertEqual(rc, 1)
-
-    def test_refuses_a_data_folder_for_a_raw_image(self):
-        rc, _ = self.run_main(fake_image("welcome"), "welcome", {"app.json": APP_JSON}, True)
-        self.assertEqual(rc, 1)
 
 
 if __name__ == "__main__":

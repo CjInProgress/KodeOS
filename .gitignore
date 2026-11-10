@@ -13,7 +13,6 @@ storage_image/*.kfw
 storage_image/*.commit
 storage_image/.kode/
 apps_image/*.bin
-apps_image/*.kfw
 apps_image/*.commit
 __pycache__/
 *.log

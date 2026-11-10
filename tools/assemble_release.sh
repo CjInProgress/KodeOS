@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# Turns a finished `idf.py build` into the three release artifacts kodeOS
+# Turns a finished `idf.py build` into the four release artifacts kodeOS
 # ships on GitHub: the factory pack (the files this release's
 # erase-everything flash writes, per https://docs.kode.diy/internals/boot-model,
 # the apps region with the welcome app installed among them, plus
 # a flash.sh, a README.txt covering the same ground and the
 # THIRD_PARTY_NOTICES.txt for what kodeos.bin contains), kodeos.bin
-# standalone, for `os update` or the mailbox, and the welcome app's kfw, to
-# install it again on a board that lost it. Used by
+# standalone, for `os update` or the mailbox, and the welcome app's image and
+# its app data, to install it again on a board that lost it. Used by
 # .github/workflows/release.yml; safe to run locally too, e.g. to check what
 # a release would contain before tagging.
 #
@@ -15,14 +15,13 @@
 #     version   e.g. 00.00.02 - no leading "v", see validate_release_tag.sh
 #     build_dir default: build   (idf.py's output directory)
 #     out_dir   default: dist
-#     apps_dir  default: apps_image (holds <CONFIG_KODEOS_WELCOME_APP>.kfw)
+#     apps_dir  default: apps_image (holds <CONFIG_KODEOS_WELCOME_APP>.bin)
 #   exit: 0 on success, 1 if a required input file is missing,
 #         kodeos.bin is past its ceiling (tools/check_os_size.sh),
 #         the FAT does not carry exactly kode/, the C5 image the SDK pins and
-#         the welcome app's data folder, the welcome app's kfw is not the
-#         project the build names or not the one tools/build_welcome.sh
-#         stamped from apps_image/welcome.pin, or that data folder is not the
-#         kfw's own
+#         the welcome app's data folder, or the welcome app's image is not
+#         the project the build names, or the image or that data folder is not
+#         the one tools/build_welcome.sh stamped from apps_image/welcome.pin
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -94,39 +93,39 @@ fi
 # mode, so the customer's first power-on runs it. The image must be the
 # project this kodeOS names, or the reset would not find it and the PASS
 # would fail at its `find` step. flash.sh writes it at the region's base,
-# and the region's base is the table's. It arrives as a kfw, with its app
-# data: the pack's image comes out of that container, and so does the copy
-# the release publishes.
+# and the region's base is the table's.
 require "${build_dir}/config/sdkconfig.json"
 welcome="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["KODEOS_WELCOME_APP"])' \
            "${build_dir}/config/sdkconfig.json")"
-require "${apps_dir}/${welcome}.kfw"
+require "${apps_dir}/${welcome}.bin"
 require "${apps_dir}/${welcome}.commit"
 require "${apps_dir}/welcome.pin"
-# The kfw must be the one tools/build_welcome.sh built from the pin, the
+# The image must be the one tools/build_welcome.sh built from the pin, the
 # same rule as the C5's: one copied in by hand has no stamp, and one built
-# from another commit or a dirty tree has the wrong one.
+# from another commit or a dirty tree has the wrong one. The stamp is
+# "<commit> <sha256 of the image> <digest of the data folder>".
 read -r _ _ welcome_pin < "${apps_dir}/welcome.pin"
-read -r welcome_commit welcome_sum < "${apps_dir}/${welcome}.commit"
+read -r welcome_commit welcome_sum welcome_data < "${apps_dir}/${welcome}.commit"
 if [ -z "$welcome_pin" ] || [ "$welcome_commit" != "$welcome_pin" ]; then
-    echo "error: ${welcome}.kfw was built from ${welcome_commit:-nothing}, welcome.pin names ${welcome_pin:-nothing}" >&2
+    echo "error: ${welcome}.bin was built from ${welcome_commit:-nothing}, welcome.pin names ${welcome_pin:-nothing}" >&2
     echo "  run tools/build_welcome.sh, then build and assemble again" >&2
     exit 1
 fi
 if command -v sha256sum >/dev/null 2>&1; then
-    welcome_actual="$(sha256sum "${apps_dir}/${welcome}.kfw" | awk '{ print $1 }')"
+    welcome_actual="$(sha256sum "${apps_dir}/${welcome}.bin" | awk '{ print $1 }')"
 else
-    welcome_actual="$(shasum -a 256 "${apps_dir}/${welcome}.kfw" | awk '{ print $1 }')"
+    welcome_actual="$(shasum -a 256 "${apps_dir}/${welcome}.bin" | awk '{ print $1 }')"
 fi
 if [ "$welcome_sum" != "$welcome_actual" ]; then
-    echo "error: the ${welcome}.kfw in ${apps_dir} is not the one tools/build_welcome.sh stamped" >&2
+    echo "error: the ${welcome}.bin in ${apps_dir} is not the one tools/build_welcome.sh stamped" >&2
     exit 1
 fi
-# An install on the board leaves the kfw's app.json and icon in the app's data
-# folder, which is where Apps reads its icon, colour and description. The
-# factory installs nothing: it writes the FAT image, so the image carries that
-# folder, and only that one under .kode/. tools/mkapps.py, below, refuses a
-# folder whose files are not the kfw's.
+# Apps reads an app's icon, colour and description from its data folder, and
+# an app's metadata travels apart from its image: an install writes no such
+# folder. So the FAT image carries the welcome app's, and only that one under
+# .kode/. tools/build_welcome.sh built it from the pinned app's appdata/ and
+# put its digest in the stamp; a folder edited since, or left by another
+# build, has another digest.
 meta_root="${stage_fs}/.kode"
 meta="${meta_root}/appsdata/${welcome}"
 if [ ! -d "$meta" ]; then
@@ -140,6 +139,15 @@ if [ -n "$stray" ]; then
     echo "  empty storage_image/.kode/, run tools/build_welcome.sh and build again" >&2
     exit 1
 fi
+if ! meta_sum="$(python3 tools/kappdata.py digest "$meta")"; then
+    echo "error: the FAT image's data folder for the welcome app is not one the board reads" >&2
+    exit 1
+fi
+if [ -z "${welcome_data:-}" ] || [ "$meta_sum" != "$welcome_data" ]; then
+    echo "error: the FAT image's data folder for the welcome app is not the one tools/build_welcome.sh stamped" >&2
+    echo "  run tools/build_welcome.sh before the build, then build and assemble again" >&2
+    exit 1
+fi
 apps_off="$(awk -F, '$1 ~ /^apps[[:space:]]*$/ { gsub(/[[:space:]]/, "", $4); print $4; exit }' sdk/components/kbsp/partitions.csv)"
 flash_off="$(awk '$2 == "apps.bin" { print $1; exit }' "${templates_dir}/flash.sh")"
 if [ -z "$apps_off" ] || [ -z "$flash_off" ] || [ $((apps_off)) -ne $((flash_off)) ]; then
@@ -150,8 +158,7 @@ fi
 rm -rf "$stage"
 mkdir -p "$stage" "$out_dir"
 
-python3 tools/mkapps.py --project "$welcome" --appdata "$meta" \
-        "${apps_dir}/${welcome}.kfw" "$stage/apps.bin" >/dev/null
+python3 tools/mkapps.py --project "$welcome" "${apps_dir}/${welcome}.bin" "$stage/apps.bin" >/dev/null
 
 cp "${build_dir}/bootloader/bootloader.bin"            "$stage/"
 cp "${build_dir}/partition_table/partition-table.bin"  "$stage/"
@@ -167,9 +174,19 @@ chmod +x "$stage/flash.sh"
 rm -rf "$stage"
 
 cp "${build_dir}/kodeos.bin" "${out_dir}/kodeos-v${version}.bin"
-cp "${apps_dir}/${welcome}.kfw" "${out_dir}/${welcome}-v${version}.kfw"
 
-( cd "$out_dir" && sha256sum "${pack_name}.zip" "kodeos-v${version}.bin" "${welcome}-v${version}.kfw" > SHA256SUMS.txt )
+# The welcome app as a person puts it back on a board that lost it: its image,
+# for `install`, and its data folder under the app's own name, which is what
+# `kcli.py appdata put` takes once unzipped.
+app_name="${welcome}-v${version}"
+cp "${apps_dir}/${welcome}.bin" "${out_dir}/${app_name}.bin"
+rm -rf "${out_dir:?}/${welcome}"
+mkdir "${out_dir}/${welcome}"
+cp "$meta"/* "${out_dir}/${welcome}/"
+( cd "$out_dir" && rm -f "${app_name}-appdata.zip" && zip -rq "${app_name}-appdata.zip" "${welcome}" -x "${welcome}/" )
+rm -rf "${out_dir:?}/${welcome}"
+
+( cd "$out_dir" && sha256sum "${pack_name}.zip" "kodeos-v${version}.bin" "${app_name}.bin" "${app_name}-appdata.zip" > SHA256SUMS.txt )
 
 echo "release artifacts ready in ${out_dir}/:"
 ls -la "${out_dir}"
