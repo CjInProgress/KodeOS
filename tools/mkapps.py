@@ -24,8 +24,7 @@ import argparse
 import re
 import struct
 import sys
-
-import mkkfw
+import zlib
 
 FMT_H = "sdk/components/kdrv/apps/include/kapps_fmt.h"
 PARTITIONS_CSV = "sdk/components/kbsp/partitions.csv"
@@ -34,6 +33,7 @@ FMT_NAMES = ("KAPPS_DIR_MAGIC", "KAPPS_FMT_VERSION", "KAPPS_DIR_A_OFF",
              "KAPPS_DIR_B_OFF", "KAPPS_REQ_OFF", "KAPPS_DATA_OFF",
              "KAPPS_ALIGN", "KAPPS_MAX_ENTRIES", "KAPPS_ENTRY_VALID")
 ERASED = b"\xff"
+ESP_IMAGE_MAGIC = 0xE9      # the first byte of every ESP-IDF image
 DIR_GEN = 1                 # a fresh region's generation, as kdrv_apps formats it
 ENTRY_SEQ = 1               # the first install's seq: next_seq() of an empty directory
 DIR_HEAD = "<IIII"          # magic, version, gen, count
@@ -47,6 +47,17 @@ APP_DESC_OFF = 0x20
 APP_DESC_MAGIC = 0xABCD5432
 APP_DESC_PROJECT_OFF = APP_DESC_OFF + 0x30
 APP_DESC_PROJECT_LEN = 32
+
+
+def esp_crc32(data: bytes) -> int:
+    """The CRC32 the board seals a directory with, which is not zlib's default.
+
+    kdrv_apps.c uses esp_rom_crc32_le(UINT32_MAX, ...). The ROM routine
+    inverts the seed it is given, so passing ~0 starts the raw CRC at 0, where
+    zlib's default starts it at ~0. Passing 0xFFFFFFFF as zlib's running value
+    is what reproduces it.
+    """
+    return zlib.crc32(data, 0xFFFFFFFF) & 0xFFFFFFFF
 
 
 def read_fmt(path: str) -> dict:
@@ -81,9 +92,9 @@ def project_of(image: bytes) -> str:
     """The project name an ESP-IDF image carries, as AO_AppMgr reads it."""
     if len(image) < APP_DESC_PROJECT_OFF + APP_DESC_PROJECT_LEN:
         raise ValueError("the image is too short to carry an app descriptor")
-    if image[0] != mkkfw.ESP_IMAGE_MAGIC:
+    if image[0] != ESP_IMAGE_MAGIC:
         raise ValueError(f"the image starts with 0x{image[0]:02x}, not the ESP image "
-                         f"magic 0x{mkkfw.ESP_IMAGE_MAGIC:02x}")
+                         f"magic 0x{ESP_IMAGE_MAGIC:02x}")
     (magic,) = struct.unpack_from("<I", image, APP_DESC_OFF)
     if magic != APP_DESC_MAGIC:
         raise ValueError("the image carries no app descriptor")
@@ -105,7 +116,7 @@ def build(image: bytes, fmt: dict, region_size: int) -> bytes:
     body = struct.pack(DIR_HEAD, fmt["KAPPS_DIR_MAGIC"], fmt["KAPPS_FMT_VERSION"],
                        DIR_GEN, 1)
     body += b"".join(struct.pack(DIR_ENTRY, *e) for e in entries)
-    directory = body + struct.pack("<I", mkkfw.esp_crc32(body))
+    directory = body + struct.pack("<I", esp_crc32(body))
 
     out = bytearray(ERASED * data_off)
     a = fmt["KAPPS_DIR_A_OFF"]

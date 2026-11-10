@@ -25,7 +25,7 @@ body:
         - Flash over serial (idf.py flash, esptool, the release pack's flash.sh)
         - Flash over JTAG (tools/jtag_flash.sh, the VS Code extension)
         - Release pipeline or CI
-        - Host tool (kcli, kble, kmirror, kappdata, mkkfw)
+        - Host tool (kcli, kble, kmirror, kappdata, mkapps)
         - Host tests (tools/host_tests.sh, tools/tool_tests.sh)
         - Layer check (tools/check_layers.sh)
         - Other

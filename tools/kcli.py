@@ -691,14 +691,10 @@ def _appdata_mkdir(board, path):
 
 def do_appdata_put(board, args):
     import kappdata
-    obj = kappdata.validate(json.load(open(os.path.join(args.dir, "app.json"))))
-    icon_path = kappdata.find_icon(args.dir, obj)
-    icon = kappdata.to_k64(icon_path) if icon_path else None
-    if icon is not None:
-        obj["icon"] = "icon.k64"          # the board reads what we send, not what we found
-    body = json.dumps(obj, separators=(", ", ": ")).encode()
-    if len(body) > 1024:
-        raise SystemExit("app.json: longer than 1 KB once written")
+    try:
+        body, icon = kappdata.load(args.dir)   # the bytes every carrier stores
+    except ValueError as exc:
+        die(f"appdata put: {exc}")
     base = kappdata.folder(args.name)
     for d in ("/storage/.kode", "/storage/.kode/appsdata", base):
         _appdata_mkdir(board, d)   # 'exists' is fine; mkdir is one level at a time
@@ -706,7 +702,7 @@ def do_appdata_put(board, args):
                   f"file_put path={quote(base + '/app.json')} size={len(body)} "
                   f"crc32={zlib.crc32(body)}",
                   "file_put", verbose=args.verbose)
-    if icon is not None:
+    if icon:
         stream_payload(board, icon,
                       f"file_put path={quote(base + '/icon.k64')} size={len(icon)} "
                       f"crc32={zlib.crc32(icon)}",
