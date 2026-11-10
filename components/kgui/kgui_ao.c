@@ -3518,7 +3518,7 @@ static void gui_stopped_fill(Gui * const me);
 static void gui_stopped_run(Gui * const me);
 static void gui_stopped_follow(Gui * const me);
 static void gui_battery_fill(Gui * const me);
-static void gui_battery_check(Gui * const me, bool critical, bool charging);
+static void gui_battery_check(Gui * const me, bool critical);
 static QState Gui_returning(Gui * const me, QEvt const * const e);
 static bool gui_return_begin(Gui * const me);
 static void gui_return_listed(Gui * const me);
@@ -14226,18 +14226,14 @@ static void gui_stopped_run(Gui * const me)
  */
 static void gui_battery_fill(Gui * const me)
 {
-    char        sub[GUI_CRIT_SUB_MAX];
-    const char *line = KGUI_CRIT_PLUG;
+    char sub[GUI_CRIT_SUB_MAX];
 
     me->sheet_locked = false;
-    if ( me->vbus )
-    {
-        line = KGUI_CRIT_PLUGGED;
-    }
     (void)snprintf(sub, sizeof(sub), "%s, %u %%", KGUI_CRIT_SUB, (unsigned)me->soc);
     gui_frame_begin(me);
     kgui_sys_pile(&me->sys);
-    kgui_sys_text(&me->sys, KGUI_SYS_ROOM_TOP, KGUI_SYS_ROOM_END, KGUI_CRIT_TITLE, sub, line);
+    kgui_sys_text(&me->sys, KGUI_SYS_ROOM_TOP, KGUI_SYS_ROOM_END, KGUI_CRIT_TITLE, sub,
+                  KGUI_CRIT_PLUG);
 }
 
 /**
@@ -14248,15 +14244,15 @@ static void gui_battery_fill(Gui * const me)
  * another system card (it would take the pairing's code or a question away),
  * while a guided test has the glass, or while the board rests with the glass
  * parked; the reading or the wake that finds the way clear raises it, because
- * the entry is only counted once it has risen.
+ * the entry is only counted once it has risen. Nor is it raised while the
+ * cable is in: it asks for the cable.
  *
  * @param me       The AO, with the reading already copied.
  * @param critical Whether the reading is critical.
- * @param charging Whether the cell is charging.
  */
-static void gui_battery_check(Gui * const me, bool critical, bool charging)
+static void gui_battery_check(Gui * const me, bool critical)
 {
-    if ( kgui_crit_due(&me->crit, critical, charging, me->soc) )
+    if ( kgui_crit_due(&me->crit, critical, me->vbus, me->soc) )
     {
         bool parked = false;
 
@@ -31570,8 +31566,7 @@ static QState gui_lp_resume(Gui * const me)
     }
     /* A battery that went critical during the rest is said now, with the glass
      * back, and not a reading later. */
-    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state),
-                      ((uint8_t)GUI_SET_BAT_CHG == me->bat_state));
+    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state));
     return Q_TRAN(&Gui_face);
 }
 
@@ -31951,8 +31946,7 @@ static QState gui_rest_unpark(Gui * const me)
     {
         gui_lp_refusal_say(me);
     }
-    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state),
-                      ((uint8_t)GUI_SET_BAT_CHG == me->bat_state));
+    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state));
     return Q_TRAN(&Gui_rest);
 }
 
@@ -33514,8 +33508,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             gui_cc_paint(me);
             gui_face_pile_paint(me);
             /* The critical card rises once per entry into critical. */
-            gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state),
-                              charging);
+            gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state));
             if ( GUI_SHEET_BAT == me->sheet )
             {
                 /* A rebuild only when the SHAPE moved - the cable, the
@@ -33564,10 +33557,15 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                  * the glass changes the answer, so the note has to follow. */
                 gui_sheet_refill(me);
             }
-            else if ( (GUI_SHEET_BATTERY == me->sheet)
-                     && ((was_vbus != me->vbus) || (was_soc != me->soc)) )
+            else if ( (GUI_SHEET_BATTERY == me->sheet) && me->vbus )
             {
-                /* The critical card says the charge and whether the cable is in. */
+                /* The critical card asked for the cable, and here it is. */
+                KLOG_N(TAG, "battery: the cable is in; the critical card closes");
+                gui_sheet_close(me);
+            }
+            else if ( (GUI_SHEET_BATTERY == me->sheet) && (was_soc != me->soc) )
+            {
+                /* The critical card says the charge. */
                 gui_sheet_refill(me);
             }
             else
