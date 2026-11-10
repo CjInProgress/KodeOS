@@ -2741,6 +2741,9 @@ typedef struct {
                                *   is where a card's header drag stops being
                                *   the header's.                            */
     GuiSheet  sheet;         /**< Which sheet is up; NONE when none.        */
+    GuiSheet  sheet_under;   /**< The settings page a system card took over,
+                               *   or NONE: where the card's close goes back
+                               *   to (gui_sheet_reopen()).                 */
     lv_obj_t *sheet_rows[GUI_SHEET_ROWS_MAX];
     uint16_t  sheet_tag[GUI_SHEET_ROWS_MAX];
                              /**< One number per row, and what it means is
@@ -5639,8 +5642,9 @@ static bool ui_build(Gui * const me)
             kui_drag_set(&me->card_drag, true);
         }
     }
-    me->sheet     = GUI_SHEET_NONE;
-    me->sheet_row = -1;
+    me->sheet       = GUI_SHEET_NONE;
+    me->sheet_under = GUI_SHEET_NONE;
+    me->sheet_row   = -1;
 #if CONFIG_KODEOS_BLE_PAIRING_PASSKEY
     me->pair_live    = false;
     me->pair_hold    = false;
@@ -25067,6 +25071,24 @@ static void gui_sheet_kind_take(Gui * const me, GuiSheet kind)
         gui_kbd_forget(me);
     }
 #endif
+    if ( (GUI_SHEET_OPENING == kind) || (GUI_SHEET_FAILURE == kind) )
+    {
+        /* A write's card closes onto the screen, as it always has. */
+        me->sheet_under = GUI_SHEET_NONE;
+    }
+    else if ( gui_sheet_is_system(kind) && !gui_sheet_is_system(me->sheet) )
+    {
+        /* A system card arriving over a page notes it, to close onto it. */
+        me->sheet_under = GUI_SHEET_NONE;
+        if ( gui_sheet_is_page(me->sheet) )
+        {
+            me->sheet_under = me->sheet;
+        }
+    }
+    else
+    {
+        /* A card taken over by another keeps what it noted. */
+    }
     me->sheet = kind;
     if ( (GUI_SHEET_DETAILS != kind) && (GUI_SHEET_OPENING != kind)
         && (GUI_SHEET_FAILURE != kind) && (GUI_SHEET_STOPPED != kind) )
@@ -36592,6 +36614,31 @@ static QState gui_sheet_hand_up(Gui * const me, QEvt const * const e,
 }
 
 /**
+ * @brief Ask for the page a system card covered, as the card closes.
+ *
+ * Posted, like every sheet: the card leaves for its host first (its exit
+ * runs whole), and the page is opened from there as a tap on its circle or
+ * its row would open it, at its top. A page that is a list of More's
+ * (gui_sheet_list_page()) opens only over More, so More is asked first and
+ * the page over it.
+ *
+ * @param me The AO, its system card still up.
+ */
+static void gui_sheet_reopen(Gui * const me)
+{
+    GuiSheet const            under = me->sheet_under;
+    GuiListPage const * const list  = gui_sheet_list_page(me, under);
+
+    KLOG_I(TAG, "sheet closed: %s (back to %s)",
+           gui_sheet_kind_name(me->sheet), gui_sheet_kind_name(under));
+    if ( NULL != list )
+    {
+        gui_sheet_open_kind(me, list->page);
+    }
+    gui_sheet_open_kind(me, under);
+}
+
+/**
  * @brief Take the sheet away, as the bottom button's release does.
  *
  * A list of choices goes back to the page it opened from, and the card stays
@@ -36662,7 +36709,13 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
     else
     {
         /* Up to the superstate: the screen underneath is already
-         * there, and going up does not re-enter it. */
+         * there, and going up does not re-enter it. A system card that
+         * covered a settings page asks for it as it goes. */
+        if ( gui_sheet_is_system(me->sheet) && gui_sheet_is_page(me->sheet_under)
+            && (home == Q_STATE_CAST(&Gui_settings)) )
+        {
+            gui_sheet_reopen(me);
+        }
         status = Q_TRAN(home);
     }
     return status;
@@ -36946,7 +36999,8 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 gui_kbd_forget(me);
             }
 #endif
-            me->sheet = GUI_SHEET_NONE;
+            me->sheet       = GUI_SHEET_NONE;
+            me->sheet_under = GUI_SHEET_NONE;
             me->rm_busy = false;
             /* A lock belongs to the sheet that declared it, and the sheet is
              * gone: whatever rises next says for itself whether it can be
