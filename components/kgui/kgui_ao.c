@@ -51,6 +51,7 @@
 #include "kgui_haptic.h"   /* the interface's buzz: four effects, one call */
 #include "kgui_prefs.h"    /* the interface's two settings: keys, words, store */
 #include "kgui_scene_label.h" /* a scene's English words, for what the interface shows */
+#include "kgui_osrel.h"    /* kodeOS's own update: the service's answer and About's row */
 #include "kgui_keyboard.h" /* the keypad card: a password or a hidden name, by multitap */
 #include "kgui_screens.h" /* this component's own screens and subjects */
 #include "kgui_motion.h"   /* the launcher's rail and motions: Step, Glide, Rubber, Slide */
@@ -1241,6 +1242,31 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_OS_IMAGE  "kodeos.bin"
 
 /**
+ * @brief Where kodeOS asks which of its versions is the latest.
+ *
+ * Empty in a build that asks nobody: About's row then offers the card's
+ * image alone. The answer names a version and the link of its `.kfw`
+ * (kgui_osrel.h).
+ */
+#define GUI_OS_SERVICE        CONFIG_KGUI_OS_UPDATE_URL
+#define GUI_OS_SERVICE_NONE   1U         /**< sizeof an empty GUI_OS_SERVICE: its terminator alone. */
+#define GUI_OS_SERVICE_PLAIN  "http://"  /**< A service asked with no TLS: a bench's, whose release may be a plain link too. */
+#define GUI_OS_ALIGN          64U        /**< What the service's block in PSRAM is aligned to, in bytes. */
+#define GUI_HTTP_OK           200U       /**< The service answered with a release. */
+#define GUI_HTTP_NOT_FOUND    404U       /**< The service's answer when no release is published. */
+
+_Static_assert(sizeof(GUI_OS_SERVICE) <= KODE_NET_URL_MAX,
+               "the update service's URL must fit an HTTP ask");
+_Static_assert(KGUI_OSREL_URL_MAX <= KODE_FLASH_SRC_MAX,
+               "a release's link must fit an install's source");
+
+/** @brief What kodeOS keeps of its update service, in PSRAM. */
+typedef struct {
+    char         answer[KGUI_OSREL_ANSWER_MAX + 1U];  /**< The service's last answer as it came, and a terminator. Lent to AO_Net while a question is out. */
+    kgui_osrel_t rel;                                 /**< The newer release, while the check says there is one. */
+} GuiOsUpdate;
+
+/**
  * @brief The ESP32-C5's own firmware, which the factory's internal FAT carries.
  *
  * The radio coprocessor's image (`install dst=c5` writes it), never an app:
@@ -1318,7 +1344,8 @@ typedef enum {
     GUI_ASK_NONE = 0,   /**< Nothing is held back. */
     GUI_ASK_RUN,        /**< An installed app is run: its project name. */
     GUI_ASK_FLASH,      /**< A file is written, to be run once the edge has closed: its file name. */
-    GUI_ASK_OS          /**< kodeOS is updated from the card. */
+    GUI_ASK_OS,         /**< kodeOS is updated from the card. */
+    GUI_ASK_OS_NET      /**< kodeOS is updated to the release the service named. */
 } GuiAsk;
 
 /**
@@ -1389,7 +1416,7 @@ typedef enum {
 #define GUI_TAG_ABOUT_RADIO   60U   /* the C5's own firmware                */
 #define GUI_TAG_ABOUT_CARD    61U   /* the microSD, if there is one         */
 #define GUI_TAG_ABOUT_UPTIME  62U   /* how long this boot has lasted        */
-#define GUI_TAG_ABOUT_UPDATE  63U   /* write kodeos.bin from the card       */
+#define GUI_TAG_ABOUT_UPDATE  63U   /* update kodeOS: the card or the service */
 #define GUI_TAG_ABOUT_RESET   64U   /* ask for the factory reset            */
 #define GUI_TAG_ABOUT_TECH    65U   /* show or hide the technical rows      */
 #define GUI_TAG_KODY_UPDATE   66U   /* fetch Kody's official pack           */
@@ -2919,6 +2946,10 @@ typedef struct {
                                *   itself; 0 when it did not say. Not the
                                *   volume's size - a card is not obliged to
                                *   carry a filesystem that spans it.        */
+    GuiOsUpdate *os;         /**< The update service's answer and the release
+                               *   it named, in PSRAM: NULL until the first
+                               *   question, and when there was no room.    */
+    uint8_t  os_check;       /**< kgui_osrel_check_t: where the check stands. */
     uint8_t  write_what;     /**< kwrite_t: what the write on the glass is
                                *   and how it ends - the Opening sheet's
                                *   title, name and sentence, and the
@@ -3264,6 +3295,10 @@ static void gui_bat_refresh(Gui * const me);
 static void gui_about_fill(Gui * const me);
 static void gui_about_act(Gui * const me, uint16_t tag);
 static bool gui_os_image_on_card(Gui const * const me);
+static void gui_os_ask(Gui * const me, const char *why);
+static void gui_os_answer(Gui * const me, NetHttpRspEvt const * const r);
+static kgui_osrel_row_t gui_os_row(Gui const * const me);
+static const char *gui_os_version(Gui const * const me);
 static const char *gui_boot_reason_name(void);
 static void gui_uptime_text(char *dst, size_t cap);
 static void gui_sheet_open_kind(Gui * const me, GuiSheet kind);
@@ -4060,6 +4095,14 @@ static void gui_dump(Gui * const me)
                    me->sd_known ? (me->sd_mounted ? "mounted" : "absent")
                                 : "asking",
                    gui_os_image_on_card(me) ? "kodeos.bin" : "none");
+            /* And what its Software update row says. */
+            {
+                char words[KGUI_OSREL_TEXT_MAX];
+
+                kgui_osrel_row_text(gui_os_row(me), gui_os_version(me), words,
+                                    sizeof(words));
+                KLOG_N(TAG, "  update: %s", words);
+            }
         }
     }
 }
@@ -14776,6 +14819,16 @@ static void gui_write_send(Gui * const me)
                                  (uint8_t)KFW_TARGET_OS, false);
             break;
         }
+        case GUI_ASK_OS_NET: {
+            /* The link the service named: AO_AppMgr streams it into the
+             * inactive slot as `install src="https://..." dst=os` does. */
+            if ( NULL != me->os )
+            {
+                appmgr_image_request((uint8_t)KFW_SRC_HTTP, me->os->rel.url,
+                                     (uint8_t)KFW_TARGET_OS, false);
+            }
+            break;
+        }
         default: {
             /* Nothing was held back. */
             break;
@@ -23824,6 +23877,182 @@ static bool gui_os_image_on_card(Gui const * const me)
 }
 
 /**
+ * @brief Whether this build has an update service to ask.
+ * @return true unless CONFIG_KGUI_OS_UPDATE_URL is empty.
+ */
+static bool gui_os_service(void)
+{
+    return (sizeof(GUI_OS_SERVICE) > GUI_OS_SERVICE_NONE);
+}
+
+/**
+ * @brief Whether a release's link may be a plain one.
+ * @return true only when the service itself is asked with no TLS, on a bench.
+ */
+static bool gui_os_plain(void)
+{
+    return (strncmp(GUI_OS_SERVICE, GUI_OS_SERVICE_PLAIN,
+                    sizeof(GUI_OS_SERVICE_PLAIN) - 1U) == 0);
+}
+
+/**
+ * @brief The newer version the service named.
+ * @param me The AO.
+ * @return Its version; "" while nothing was ever kept.
+ */
+static const char *gui_os_version(Gui const * const me)
+{
+    const char *version = "";
+
+    if ( NULL != me->os )
+    {
+        version = me->os->rel.version;
+    }
+    return version;
+}
+
+/**
+ * @brief A check ended with nothing to show.
+ *
+ * @param me  The AO.
+ * @param why What went wrong, for the log.
+ */
+static void gui_os_failed(Gui * const me, const char *why)
+{
+    me->os_check = (uint8_t)KGUI_OSREL_FAILED;
+    KLOG_I(TAG, "update: not checked (%s)", why);
+}
+
+/**
+ * @brief Ask the update service which kodeOS is the latest.
+ *
+ * Asked when About opens, when Wi-Fi gets its address under that page, and
+ * on the top button on its row: never by itself, since About is the only
+ * place that shows the answer. Nothing is asked with no service, with no
+ * address, or while a question is out. The answer comes back as
+ * NET_HTTP_RSP_SIG (gui_os_answer()), into a block of PSRAM taken at the
+ * first question and lent to AO_Net until then.
+ *
+ * @param me  The AO.
+ * @param why What asked, for the log.
+ */
+static void gui_os_ask(Gui * const me, const char *why)
+{
+    /* cppcheck-suppress knownConditionTrueFalse ; the service is the build's choice: an empty CONFIG_KGUI_OS_UPDATE_URL asks nobody */
+    if ( (!gui_os_service()) || (!me->wifi_linked)
+        || ((uint8_t)KGUI_OSREL_ASKING == me->os_check) )
+    {
+        return;     /* nobody to ask, no way to ask, or asked already */
+    }
+    if ( NULL == me->os )
+    {
+        /* cppcheck-suppress misra-c2012-11.5 ; khal_alloc_psram() answers void *: PSRAM is taken by name (rule 8) */
+        me->os = (GuiOsUpdate *)khal_alloc_psram(GUI_OS_ALIGN, sizeof(GuiOsUpdate));
+        if ( NULL != me->os )
+        {
+            (void)memset(me->os, 0, sizeof(*me->os));
+        }
+    }
+    if ( NULL == me->os )
+    {
+        gui_os_failed(me, "no memory for the answer");
+        return;
+    }
+    if ( net_http_ask(&me->super, false, GUI_OS_SERVICE, NULL, 0U, NULL,
+                      me->os->answer, KGUI_OSREL_ANSWER_MAX) == KODE_OK )
+    {
+        me->os_check = (uint8_t)KGUI_OSREL_ASKING;
+        KLOG_I(TAG, "update: asking the service (%s)", why);
+    }
+    else
+    {
+        gui_os_failed(me, "AO_Net did not take the question");
+    }
+}
+
+/**
+ * @brief The update service answered, or the question failed.
+ *
+ * A release newer than the running image is kept and offered; an equal or
+ * older one, and a service with no release at all, leave the board up to
+ * date. About's row follows when that page is up.
+ *
+ * @param me The AO.
+ * @param r  AO_Net's answer; the body is in the block the question lent.
+ */
+static void gui_os_answer(Gui * const me, NetHttpRspEvt const * const r)
+{
+    bool const reached = ((uint8_t)KODE_OK == r->rc);
+
+    if ( (NULL == me->os) || ((uint8_t)KGUI_OSREL_ASKING != me->os_check) )
+    {
+        return;     /* not the answer to a question of this file's */
+    }
+    if ( reached && ((uint16_t)GUI_HTTP_OK == r->result.status)
+        && (!r->result.truncated) && (KGUI_OSREL_ANSWER_MAX >= r->result.kept) )
+    {
+        kgui_osrel_t     rel;
+        kdrv_slot_desc_t self;
+        const char      *running = "";
+
+        me->os->answer[r->result.kept] = '\0';
+        if ( kdrv_running_desc(&self) == KODE_OK )
+        {
+            running = self.version;
+        }
+        if ( !kgui_osrel_parse(me->os->answer, r->result.kept, gui_os_plain(), &rel) )
+        {
+            gui_os_failed(me, "the service's answer did not read");
+        }
+        else if ( kgui_osrel_newer(rel.version, running) )
+        {
+            me->os->rel  = rel;
+            me->os_check = (uint8_t)KGUI_OSREL_AVAILABLE;
+            KLOG_N(TAG, "update: kodeOS %s is available; this is %s",
+                   rel.version, running);
+        }
+        else
+        {
+            me->os_check = (uint8_t)KGUI_OSREL_CURRENT;
+            KLOG_I(TAG, "update: the service names kodeOS %s; this is %s, up to date",
+                   rel.version, running);
+        }
+    }
+    else if ( reached && ((uint16_t)GUI_HTTP_NOT_FOUND == r->result.status) )
+    {
+        me->os_check = (uint8_t)KGUI_OSREL_CURRENT;
+        KLOG_I(TAG, "update: the service names no release");
+    }
+    else
+    {
+        KLOG_I(TAG, "update: the service gave status %u, HTTP %u",
+               (unsigned)r->rc, (unsigned)r->result.status);
+        gui_os_failed(me, "no answer from the service");
+    }
+    if ( GUI_SHEET_ABOUT == me->sheet )
+    {
+        gui_sheet_refill(me);
+    }
+}
+
+/**
+ * @brief What About's "Software update" row says now.
+ * @param me The AO.
+ * @return The row's state, from the card, the network, the battery and the check.
+ */
+static kgui_osrel_row_t gui_os_row(Gui const * const me)
+{
+    kgui_osrel_view_t view;
+
+    view.service = gui_os_service();
+    view.card    = gui_os_image_on_card(me);
+    view.linked  = me->wifi_linked;
+    view.power   = kgui_osrel_power_ok(me->soc, me->vbus);
+    view.check   = (kgui_osrel_check_t)me->os_check;
+    return kgui_osrel_row(&view);
+}
+
+/**
  * @brief What a row of More says under its name: the page's reading, in a
  *        few words.
  *
@@ -24281,16 +24510,19 @@ static void gui_about_fill(Gui * const me)
      * rather than greying itself out: a row that can explain its own refusal
      * is worth more than a row that only refuses (rule 6). */
     {
-        const char *image = "No image on the card";
-        GuiActRole  role  = GUI_ACT_SECONDARY;
+        char                   words[KGUI_OSREL_TEXT_MAX];
+        kgui_osrel_row_t const row  = gui_os_row(me);
+        GuiActRole             role = GUI_ACT_SECONDARY;
 
-        if ( gui_os_image_on_card(me) )
+        /* The card's image, or the release the update service named, or why
+         * there is neither (kgui_osrel_row()). */
+        kgui_osrel_row_text(row, gui_os_version(me), words, sizeof(words));
+        if ( kgui_osrel_row_installs(row) )
         {
-            image = "kodeos.bin on the card";
             /* The card's one yellow pill, and only while it can act. */
-            role  = GUI_ACT_PRIMARY;
+            role = GUI_ACT_PRIMARY;
         }
-        if ( gui_sheet_row_plain(me, "Software update", image,
+        if ( gui_sheet_row_plain(me, "Software update", words,
                                 gui_action_ground(role)) != NULL )
         {
             me->sheet_tag[me->sheet_n - 1U] = (uint16_t)GUI_TAG_ABOUT_UPDATE;
@@ -24310,7 +24542,9 @@ static void gui_about_fill(Gui * const me)
 /**
  * @brief The top button on one About row.
  *
- * Two rows answer it: Update writes kodeos.bin from the card, and Factory
+ * Three rows answer it: Technical shows or hides its rows, Software update
+ * installs the card's kodeos.bin or the release the update service named
+ * (or asks that service again when there is nothing to install), and Factory
  * reset raises its question.
  *
  * @param me  The AO.
@@ -24334,11 +24568,31 @@ static void gui_about_act(Gui * const me, uint16_t tag)
     {
         return;     /* every other row on this page is a reading */
     }
-    if ( !gui_os_image_on_card(me) )
+    kgui_osrel_row_t const row = gui_os_row(me);
+
+    if ( kgui_osrel_row_asks(row) )
     {
-        return;     /* the row already says there is no file */
+        /* Nothing to install: the press asks the service again. */
+        gui_os_ask(me, "the row");
+        gui_sheet_refill(me);
+        return;
     }
-    KLOG_I(TAG, "updating kodeOS from the card");
+    if ( !kgui_osrel_row_installs(row) )
+    {
+        return;     /* the row already says why there is nothing to do */
+    }
+    GuiAsk from = GUI_ASK_OS_NET;
+
+    if ( KGUI_OSREL_ROW_CARD == row )
+    {
+        from = GUI_ASK_OS;
+        KLOG_I(TAG, "updating kodeOS from the card");
+    }
+    else
+    {
+        KLOG_N(TAG, "updating kodeOS to %s from the update service",
+               gui_os_version(me));
+    }
     /* The image goes into the inactive kodeOS slot, and AO_AppMgr ends
      * every write there with AO_Boot's switch and a restart into it, which
      * is what the Opening card says. The card rises first, at 0 %, about no
@@ -24350,7 +24604,7 @@ static void gui_about_act(Gui * const me, uint16_t tag)
     me->open_hold  = false;
     me->sheet_row  = -1;
     (void)snprintf(me->write_name, sizeof(me->write_name), "kodeOS");
-    gui_write_ask(me, GUI_ASK_OS, "");
+    gui_write_ask(me, from, "");
     gui_sheet_open_kind(me, GUI_SHEET_OPENING);
 }
 
@@ -33756,6 +34010,12 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
 #endif
+        case NET_HTTP_RSP_SIG: {
+            /* The one HTTP question this AO asks: the update service's. */
+            gui_os_answer(me, Q_EVT_CAST(NetHttpRspEvt));
+            status = Q_HANDLED();
+            break;
+        }
 #if CONFIG_KODEOS_WIFI
         case WIFI_STATE_SIG: {
             WifiStateEvt const * const w = Q_EVT_CAST(WifiStateEvt);
@@ -33799,6 +34059,8 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                 me->scan_out      = false;
                 me->scan_answered = false;
             }
+            bool const joined = got_ip && (!me->wifi_linked);
+
             me->wifi_linked = ((uint8_t)KDRV_WIFI_GOT_IP == w->state);
             me->wifi_rssi   = w->rssi;
             (void)snprintf(me->wifi_ssid, sizeof(me->wifi_ssid), "%s", w->ssid);
@@ -33828,6 +34090,16 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             }
             /* And the keypad, whose join this may be the answer to. */
             gui_kbd_wifi_state(me, w);
+            /* About's update row reads the link, and an address that
+             * arrives under that page is the one its question waited for. */
+            if ( (GUI_SHEET_ABOUT == me->sheet) && (!same) )
+            {
+                if ( joined )
+                {
+                    gui_os_ask(me, "Wi-Fi");
+                }
+                gui_sheet_refill(me);
+            }
             status = Q_HANDLED();
             break;
         }
@@ -36283,6 +36555,8 @@ static void gui_sheet_ask_first(Gui * const me)
     me->sheet_ask = true;
     if ( GUI_SHEET_ABOUT == me->sheet )
     {
+        /* The update service: this page is where its answer shows. */
+        gui_os_ask(me, "About");
         storage_request(KDRV_MEDIUM_SD, STORAGE_OP_INFO);
 #if CONFIG_KODEOS_RADIO
         radio_state_request();
