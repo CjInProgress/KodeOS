@@ -34,14 +34,19 @@ stage_fs() {   # stage_fs <build_dir> - a FAT staging the release accepts
 }
 stage_fs "$build_dir"
 
-# The welcome app: the name the build gives it, and an image that carries it,
-# just real enough for tools/mkapps.py (test_mkapps.py judges its output).
+# The welcome app: the name the build gives it, and a kfw of an image that
+# carries it, just real enough for tools/mkapps.py (test_mkapps.py judges its
+# output), with its app data. tools/build_welcome.sh leaves the same three
+# things: the kfw, its stamp, and the data folder in the FAT's staging.
 welcome_cfg() {   # welcome_cfg <build_dir> <name>
     mkdir -p "$1/config"
     printf '{ "KODEOS_WELCOME_APP": "%s" }\n' "$2" > "$1/config/sdkconfig.json"
 }
-fake_app() {      # fake_app <path> <project> - the image, its pin and its stamp
+fake_app() {      # fake_app <kfw> <project> <build_dir> - the kfw named as its file, of an image of <project>
     local pin=1111111111111111111111111111111111111111
+    local name; name="$(basename "$1" .kfw)"
+    local src="$work/src-$name-$2"
+    mkdir -p "$src"
     python3 -c '
 import struct, sys
 img = bytearray(0x1000)
@@ -49,14 +54,18 @@ img[0] = 0xE9
 struct.pack_into("<I", img, 0x20, 0xABCD5432)
 name = sys.argv[2].encode()
 img[0x50:0x50 + len(name)] = name
-open(sys.argv[1], "wb").write(img)' "$1" "$2"
+open(sys.argv[1], "wb").write(img)' "$work/$name-$2.img" "$2"
+    printf '{"kode": "1", "description": "A test app"}' > "$src/app.json"
+    head -c 12288 /dev/zero > "$src/icon.k64"
+    python3 tools/mkkfw.py --target app --name "$name" --appdata "$src" \
+            --appdata-out "$3/storage_stage/.kode/appsdata/$name" "$work/$name-$2.img" "$1" >/dev/null
     printf 'git@example.invalid:app.git apps/x %s\n' "$pin" > "$(dirname "$1")/welcome.pin"
-    printf '%s %s\n' "$pin" "$(sha256 "$1")" > "${1%.bin}.commit"
+    printf '%s %s\n' "$pin" "$(sha256 "$1")" > "${1%.kfw}.commit"
 }
 welcome_cfg "$build_dir" welcome
 apps_dir="$work/apps_image"
 mkdir -p "$apps_dir"
-fake_app "$apps_dir/welcome.bin" welcome
+fake_app "$apps_dir/welcome.kfw" welcome "$build_dir"
 
 out_dir="$work/dist"
 
@@ -69,11 +78,25 @@ fi
 
 zip_file="$out_dir/kodeos-factory-v00.00.99.zip"
 bin_file="$out_dir/kodeos-v00.00.99.bin"
+kfw_file="$out_dir/welcome-v00.00.99.kfw"
 sums_file="$out_dir/SHA256SUMS.txt"
 
 [ -f "$zip_file" ]  && ok "factory zip exists"    || bad "factory zip missing: $zip_file"
 [ -f "$bin_file" ]  && ok "standalone bin exists" || bad "standalone bin missing: $bin_file"
+[ -f "$kfw_file" ]  && ok "the welcome app's kfw exists" || bad "the welcome app's kfw is missing: $kfw_file"
 [ -f "$sums_file" ] && ok "SHA256SUMS.txt exists" || bad "SHA256SUMS.txt missing: $sums_file"
+
+if cmp -s "$kfw_file" "$apps_dir/welcome.kfw"; then
+    ok "the published kfw is the one the pack was built from"
+else
+    bad "the published kfw is not the one in apps_image"
+fi
+if [ "$(awk '{ print $2 }' "$sums_file" | sort | tr '\n' ' ')" = "kodeos-factory-v00.00.99.zip kodeos-v00.00.99.bin welcome-v00.00.99.kfw " ]; then
+    ok "SHA256SUMS.txt lists the three files"
+else
+    bad "SHA256SUMS.txt does not list the three files"
+    cat "$sums_file" >&2
+fi
 
 expected_entries="$(printf 'kodeos-factory-v00.00.99/bootloader.bin\nkodeos-factory-v00.00.99/partition-table.bin\nkodeos-factory-v00.00.99/ota_data_initial.bin\nkodeos-factory-v00.00.99/kodeos.bin\nkodeos-factory-v00.00.99/apps.bin\nkodeos-factory-v00.00.99/storage.bin\nkodeos-factory-v00.00.99/flash.sh\nkodeos-factory-v00.00.99/README.txt\nkodeos-factory-v00.00.99/THIRD_PARTY_NOTICES.txt' | sort)"
 actual_entries="$(unzip -Z1 "$zip_file" 2>/dev/null | sort)"
@@ -94,7 +117,7 @@ else
 fi
 
 apps_bin="$extract_dir/kodeos-factory-v00.00.99/apps.bin"
-if cmp -s "$apps_bin" "$apps_dir/welcome.bin" 65536 0; then
+if cmp -s "$apps_bin" "$work/welcome-welcome.img" 65536 0; then
     ok "apps.bin carries the welcome app's image at the region's first data page"
 else
     bad "apps.bin does not carry the welcome app's image at 0x10000"
@@ -266,12 +289,12 @@ welcome_case() {   # welcome_case <name> <mutation> - a complete build and apps 
     eval "$2"
     tools/assemble_release.sh 00.00.99 "$dir" "$work/dist-$1" "$apps" >/dev/null 2>"$work/$1.err"
 }
-if welcome_case no-welcome 'rm "$apps/welcome.bin"'; then
+if welcome_case no-welcome 'rm "$apps/welcome.kfw"'; then
     bad "assemble_release.sh should refuse a release with no welcome app"
 else
     ok "assemble_release.sh refuses a release with no welcome app"
 fi
-if welcome_case other-project 'fake_app "$apps/welcome.bin" kodeos'; then
+if welcome_case other-project 'fake_app "$apps/welcome.kfw" kodeos "$dir"'; then
     bad "assemble_release.sh should refuse a welcome image of another project"
 else
     ok "assemble_release.sh refuses a welcome image of another project"
@@ -281,21 +304,67 @@ if welcome_case no-stamp 'rm "$apps/welcome.commit"'; then
 else
     ok "assemble_release.sh refuses a welcome image with no stamp"
 fi
-if welcome_case other-commit 'printf "%s %s\n" 2222222222222222222222222222222222222222 "$(sha256 "$apps/welcome.bin")" > "$apps/welcome.commit"'; then
+if welcome_case other-commit 'printf "%s %s\n" 2222222222222222222222222222222222222222 "$(sha256 "$apps/welcome.kfw")" > "$apps/welcome.commit"'; then
     bad "assemble_release.sh should refuse a welcome image built from another commit"
 else
     ok "assemble_release.sh refuses a welcome image built from another commit"
 fi
-if welcome_case swapped 'printf "x" >> "$apps/welcome.bin"'; then
+if welcome_case swapped 'printf "x" >> "$apps/welcome.kfw"'; then
     bad "assemble_release.sh should refuse a welcome image that is not the stamped one"
 else
     ok "assemble_release.sh refuses a welcome image that is not the stamped one"
 fi
-if welcome_case renamed 'welcome_cfg "$dir" hello; fake_app "$apps/hello.bin" hello'; then
+if welcome_case renamed 'welcome_cfg "$dir" hello; rm -rf "$dir/storage_stage/.kode"; fake_app "$apps/hello.kfw" hello "$dir"'; then
     ok "assemble_release.sh takes the welcome app the build names"
 else
     bad "assemble_release.sh should take the welcome app the build names"
     cat "$work/renamed.err" >&2
+fi
+if [ -f "$work/dist-renamed/hello-v00.00.99.kfw" ]; then
+    ok "the published kfw carries the welcome app's own name"
+else
+    bad "the published kfw is not named for the welcome app"
+fi
+if welcome_case raw-image 'rm "$apps/welcome.kfw"; cp "$work/welcome-welcome.img" "$apps/welcome.bin"; printf "%s %s\n" 1111111111111111111111111111111111111111 "$(sha256 "$apps/welcome.bin")" > "$apps/welcome.commit"'; then
+    bad "assemble_release.sh should refuse a welcome app that is a raw image, not a kfw"
+else
+    ok "assemble_release.sh refuses a welcome app that is a raw image, not a kfw"
+fi
+
+# --- case 9: the FAT carries the welcome app's data folder, and it is the kfw's ---
+# An install on the board would write the kfw's app.json and icon there; the
+# factory writes the FAT image instead, so the image must hold the same two.
+meta='$dir/storage_stage/.kode/appsdata/welcome'
+if welcome_case no-data-folder 'rm -rf "$dir/storage_stage/.kode"'; then
+    bad "assemble_release.sh should refuse a FAT with no data folder for the welcome app"
+else
+    ok "assemble_release.sh refuses a FAT with no data folder for the welcome app"
+fi
+if welcome_case other-json "printf '{\"kode\":\"1\"}' > \"$meta/app.json\""; then
+    bad "assemble_release.sh should refuse an app.json that is not the kfw's"
+else
+    ok "assemble_release.sh refuses an app.json that is not the kfw's"
+fi
+if welcome_case no-icon "rm \"$meta/icon.k64\""; then
+    bad "assemble_release.sh should refuse a data folder without the kfw's icon"
+else
+    ok "assemble_release.sh refuses a data folder without the kfw's icon"
+fi
+if welcome_case extra-file "echo notes > \"$meta/notes.txt\""; then
+    bad "assemble_release.sh should refuse a file too many in the data folder"
+else
+    ok "assemble_release.sh refuses a file too many in the data folder"
+fi
+if welcome_case other-app 'mkdir -p "$dir/storage_stage/.kode/appsdata/bench"; echo x > "$dir/storage_stage/.kode/appsdata/bench/app.json"'; then
+    bad "assemble_release.sh should refuse another app's data folder in the FAT"
+else
+    ok "assemble_release.sh refuses another app's data folder in the FAT"
+fi
+if grep -q 'bench' "$work/other-app.err"; then
+    ok "the refusal names the stray folder"
+else
+    bad "the refusal does not name the stray folder"
+    cat "$work/other-app.err" >&2
 fi
 
 if [ "$fail" -eq 0 ]; then

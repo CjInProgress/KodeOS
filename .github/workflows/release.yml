@@ -204,15 +204,18 @@ jobs:
           # the user running it, and the workspace files belong to the runner
           # while this container is its own user. IdentityAgent=none because
           # there is no agent here and an inherited one would only mask which
-          # key actually works.
+          # key actually works. The welcome app is built first: its app data
+          # goes into storage_image/, and the FAT image is made by kodeOS's
+          # own build. Pillow turns its icon into the board's format.
           command: |
-            idf.py -DPROJECT_VER=${{ steps.ver.outputs.version }} build
             mkdir -p /tmp/ci-ssh
             cp .ci-ssh/welcome_sdk_key /tmp/ci-ssh/key
             chmod 600 /tmp/ci-ssh/key
             export GIT_SSH_COMMAND="ssh -i /tmp/ci-ssh/key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/ci-ssh/known_hosts"
             git config --global url."git@github.com:kodediy/kode-sdk-history.git".insteadOf "git@github.com:kodediy/kode-sdk.git"
+            python3 -m pip install --quiet pillow
             tools/build_welcome.sh
+            idf.py -DPROJECT_VER=${{ steps.ver.outputs.version }} build
 
       # Never leaves the runner, but it does not linger either: every key goes
       # before anything is packed or uploaded.
@@ -253,6 +256,7 @@ jobs:
           path: |
             dist/kodeos-factory-v${{ steps.ver.outputs.version }}.zip
             dist/kodeos-v${{ steps.ver.outputs.version }}.bin
+            dist/*-v${{ steps.ver.outputs.version }}.kfw
             dist/SHA256SUMS.txt
             dist/BUILD_INFO.txt
           if-no-files-found: error
@@ -286,4 +290,5 @@ jobs:
              --title "kodeOS v$VERSION" --generate-notes \
              "dist/kodeos-factory-v$VERSION.zip" \
              "dist/kodeos-v$VERSION.bin" \
+             dist/*-v"$VERSION".kfw \
              dist/SHA256SUMS.txt dist/BUILD_INFO.txt

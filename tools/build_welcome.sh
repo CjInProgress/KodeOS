@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 #
-# Builds the welcome app from the source apps_image/welcome.pin names and puts
-# the image where assemble_release.sh picks it up, apps_image/<project>.bin,
-# with a stamp of the commit it was built from (apps_image/<project>.commit):
-# every factory pack carries the welcome app installed, and the release
-# refuses an image whose stamp is not the pin.
+# Builds the welcome app from the source apps_image/welcome.pin names and
+# leaves it where the release picks it up:
+#
+#   apps_image/<project>.kfw      the app with its app data (tools/mkkfw.py)
+#   apps_image/<project>.commit   the commit it was built from, and the kfw's SHA-256
+#   storage_image/.kode/appsdata/<project>/
+#                                 the kfw's own app.json and icon.k64, which
+#                                 the build puts in the FAT image
+#
+# Every factory pack carries the welcome app installed, with its data folder
+# on the FAT as an install on the board would leave it, and the release
+# refuses a kfw whose stamp is not the pin. Run it before `idf.py build`: the
+# FAT image is made by that build.
 #
 # The welcome app lives in its own repository and builds with its own SDK pin,
 # so like the C5's firmware it is the one image here that `idf.py build`
@@ -13,7 +21,7 @@
 #
 #   usage: tools/build_welcome.sh
 #   exit:  0 on success, 1 if the pin cannot be read, the source is not at the
-#          pin, or the build fails
+#          pin, the build fails, or the app carries no appdata/app.json
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -65,7 +73,21 @@ if [ ! -f "$image" ]; then
     exit 1
 fi
 
-cp "$image" "apps_image/$project.bin"
+# The app's data folder, as the apps of kode-apps carry it: app.json and an
+# icon. Without it Apps shows the welcome app with no icon, colour or words.
+appdata="$src/$app_dir/appdata"
+if [ ! -f "$appdata/app.json" ]; then
+    echo "the welcome app carries no $app_dir/appdata/app.json at ${pinned:0:7}" >&2
+    exit 1
+fi
+
+# One container, and the FAT's folder written from that container's own block:
+# the two cannot differ. Only this app's folder lives under storage_image/.kode.
+kfw="apps_image/$project.kfw"
+rm -rf storage_image/.kode
+rm -f "apps_image/$project.bin"
+python3 tools/mkkfw.py --target app --name "$project" --appdata "$appdata" \
+        --appdata-out "storage_image/.kode/appsdata/$project" "$image" "$kfw"
 
 # The stamp: "<commit> <sha256>", -dirty for a tree with local changes, which
 # no release accepts.
@@ -74,8 +96,9 @@ commit="$(git -C "$src" rev-parse HEAD)"
 if [ -n "$(git -C "$src" status --porcelain)" ]; then
     commit="${commit}-dirty"
 fi
-printf '%s %s\n' "$commit" "$(sha256 "apps_image/$project.bin")" > "apps_image/$project.commit"
+printf '%s %s\n' "$commit" "$(sha256 "$kfw")" > "apps_image/$project.commit"
 
-size="$(wc -c < "apps_image/$project.bin" | tr -d ' ')"
+size="$(wc -c < "$kfw" | tr -d ' ')"
 echo
-echo "apps_image/$project.bin  <-  ${repo##*/} @ ${pinned:0:7}  ($size bytes), stamped in $project.commit"
+echo "$kfw  <-  ${repo##*/} @ ${pinned:0:7}  ($size bytes), stamped in $project.commit"
+echo "storage_image/.kode/appsdata/$project/  <-  its app data, for the FAT image"
