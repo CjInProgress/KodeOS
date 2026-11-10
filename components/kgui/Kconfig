@@ -15,6 +15,19 @@ menu "kodeOS interface"
             names are fetched from the same folder. At most 127 characters, and a
             file's URL - this folder plus its name - must fit them too.
 
+    config KGUI_OS_UPDATE_URL
+        string "Where kodeOS asks which of its versions is the latest"
+        default "https://api.kode.diy/kodes/os"
+        help
+            The service About's Software update row asks, with a plain GET
+            and no authentication. Its answer is a JSON object whose `version`
+            is the latest kodeOS and whose `url` is the link of its `.kfw`;
+            a 404 means no release is published. At most 79 characters.
+
+            Empty: kodeOS asks nobody, and the row offers the kodeos.bin of a
+            card alone. An `http://` service is for a bench: only then may
+            the release be a plain link as well.
+
     config KGUI_ASSETS_WAIT_MS
         int "How long the face waits for the pack at boot, ms"
         range 0 5000
