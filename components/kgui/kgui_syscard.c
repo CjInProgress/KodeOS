@@ -40,7 +40,7 @@ const char *kgui_stopped_reason(int end)
     return why;
 }
 
-bool kgui_crit_due(kgui_crit_t *c, bool critical, bool charging, uint8_t soc_pct)
+bool kgui_crit_due(kgui_crit_t *c, bool critical, bool cable, uint8_t soc_pct)
 {
     bool due = false;
 
@@ -50,11 +50,16 @@ bool kgui_crit_due(kgui_crit_t *c, bool critical, bool charging, uint8_t soc_pct
         {
             c->armed = true;
         }
-        if ( critical )
+        if ( cable )
+        {
+            /* The card asks for the cable: with it in there is nothing to ask. */
+            c->shown = false;
+        }
+        else if ( critical )
         {
             due = c->armed && !c->shown;
         }
-        else if ( charging || ((KGUI_BAT_CRIT_PCT + KGUI_BAT_CRIT_REARM_PCT) <= soc_pct) )
+        else if ( (KGUI_BAT_CRIT_PCT + KGUI_BAT_CRIT_REARM_PCT) <= soc_pct )
         {
             c->shown = false;
         }

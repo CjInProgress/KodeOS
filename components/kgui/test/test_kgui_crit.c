@@ -73,6 +73,26 @@ void test_crit_opens_again_on_the_cable_and_on_the_climb(void)
     TEST_ASSERT_TRUE(kgui_crit_due(&c, true, false, 10U));
 }
 
+void test_crit_is_not_due_while_the_cable_is_in(void)
+{
+    /* A cell at 8 % whose charge is held is critical by the reading, but the
+     * card asks for a cable that is already there. */
+    kgui_crit_t c = latch_with_a_cell();
+
+    TEST_ASSERT_FALSE(kgui_crit_due(&c, true, true, 8U));
+}
+
+void test_crit_is_due_again_once_the_cable_goes_out(void)
+{
+    /* Plugged in at 9 % and never charged: the cable alone opens the latch. */
+    kgui_crit_t c = latch_with_a_cell();
+
+    TEST_ASSERT_TRUE(kgui_crit_due(&c, true, false, 10U));
+    kgui_crit_taken(&c);
+    TEST_ASSERT_FALSE(kgui_crit_due(&c, true, true, 9U));
+    TEST_ASSERT_TRUE(kgui_crit_due(&c, true, false, 9U));
+}
+
 void test_crit_is_never_due_with_no_cell_seen(void)
 {
     kgui_crit_t c = { false, false };
@@ -88,6 +108,8 @@ int main(void)
     RUN_TEST(test_crit_waits_for_each_thing_that_has_the_glass);
     RUN_TEST(test_crit_rises_on_a_clear_glass);
     RUN_TEST(test_crit_opens_again_on_the_cable_and_on_the_climb);
+    RUN_TEST(test_crit_is_not_due_while_the_cable_is_in);
+    RUN_TEST(test_crit_is_due_again_once_the_cable_goes_out);
     RUN_TEST(test_crit_is_never_due_with_no_cell_seen);
     return UNITY_END();
 }
