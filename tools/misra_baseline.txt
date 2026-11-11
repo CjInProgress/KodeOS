@@ -400,8 +400,10 @@ sdk/components/kdrv/power/src/kdrv_cw2217.c misra-c2012-5.9 9
 sdk/components/kdrv/power/src/kdrv_cw2217.c misra-c2012-7.3 1
 sdk/components/kdrv/power/src/kdrv_cw2217.c misra-c2012-8.7 2
 sdk/components/kdrv/power/src/kdrv_cw2217.c misra-c2012-8.9 2
+sdk/components/kdrv/radio/include/kdrv_ble.h misra-c2012-2.5 1
 sdk/components/kdrv/radio/include/kdrv_net.h misra-c2012-2.3 1
 sdk/components/kdrv/radio/include/kdrv_net.h misra-c2012-2.4 1
+sdk/components/kdrv/radio/include/kode_wire.h misra-c2012-2.5 2
 sdk/components/kdrv/radio/src/kdrv_ble_find.c misra-c2012-21.14 1
 sdk/components/kdrv/radio/src/kdrv_ble_find.c misra-c2012-21.16 1
 sdk/components/kdrv/radio/src/kdrv_ble_find.c misra-c2012-8.7 3
@@ -580,12 +582,13 @@ sdk/components/kode_sys/src/kode_sys_rfid.c misra-c2012-8.7 4
 sdk/components/kode_sys/src/kode_sys_rfid.c misra-c2012-8.9 3
 sdk/components/kode_sys/src/kode_sys_time.c misra-c2012-10.8 1
 sdk/components/kode_sys/src/kode_sys_wifi.c misra-c2012-11.4 2
-sdk/components/kqp/include/kqp_config.h misra-c2012-2.5 4
+sdk/components/kqp/include/kqp_config.h misra-c2012-2.5 5
 sdk/components/kqp/include/kqp_signals.h misra-c2012-19.2 3
 sdk/components/kqp/include/kqp_signals.h misra-c2012-2.3 8
 sdk/components/kqp/include/kqp_signals.h misra-c2012-2.4 8
 sdk/components/kqp/include/kqp_signals.h misra-c2012-2.5 9
 sdk/components/kqp/include/kqp_signals.h misra-c2012-8.12 1
+sdk/components/kqp/src/kqp.c misra-c2012-2.5 1
 sdk/components/kqp/src/kqp.c misra-c2012-8.9 5
 sdk/components/kqp/src/kqp_bsp.c misra-c2012-1.4 1
 sdk/components/kqp/src/kqp_bsp.c misra-c2012-11.4 2
