@@ -113,7 +113,7 @@ static void group_first(const char *list, char *name)
     {
         size_t i = 0U;
 
-        while ( (i < (KGUI_GROUP_NAME_MAX - 1U)) && ('\0' != item[i]) )
+        while ( ((KGUI_GROUP_NAME_MAX - 1U) > i) && ('\0' != item[i]) )
         {
             name[i] = (char)tolower((unsigned char)item[i]);
             ++i;
@@ -450,7 +450,7 @@ static size_t group_char_len(const char *s)
 static bool group_same_first(const char *a, const char *b)
 {
     size_t const la   = group_char_len(a);
-    bool         same = (la == group_char_len(b));
+    bool         same = (group_char_len(b) == la);
 
     if ( same && (1U == la) )
     {

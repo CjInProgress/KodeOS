@@ -933,7 +933,7 @@ bool kgui_screen_face_strip(kgui_face_strip_t *out)
 
         /* The rows must be packed: the panel's side reads the strip as
          * 10 * glyph_w + colon_w pixels a row, and nothing else. */
-        if ( (NULL != buf) && (buf->header.stride == ((uint32_t)strip_w * sizeof(uint16_t))) )
+        if ( (NULL != buf) && (((uint32_t)strip_w * sizeof(uint16_t)) == buf->header.stride) )
         {
             lv_obj_t *row = plain_box(kgui_screen_dark, "strip_row");
             lv_result_t res;

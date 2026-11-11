@@ -567,7 +567,7 @@ void test_group_table_has_twenty_drawn_folders(void)
         TEST_ASSERT_EQUAL_STRING(s_want[t].plural, kgui_group_art_alias(t));
         /* Every folder of the table has a glyph there is a picture of. */
         TEST_ASSERT_NOT_NULL(glyph);
-        for ( size_t g = 0U; g < (sizeof(s_glyphs) / sizeof(s_glyphs[0])); ++g )
+        for ( size_t g = 0U; (sizeof(s_glyphs) / sizeof(s_glyphs[0])) > g; ++g )
         {
             drawn = drawn || (strcmp(glyph, s_glyphs[g]) == 0);
         }
@@ -579,9 +579,9 @@ void test_group_table_has_twenty_drawn_folders(void)
         words[(2U * t) + 1U] = kgui_group_art_alias(t);
     }
     /* No word names two folders: no key or alias is said twice. */
-    for ( size_t a = 0U; a < (2U * TABLE_N); ++a )
+    for ( size_t a = 0U; (2U * TABLE_N) > a; ++a )
     {
-        for ( size_t b = a + 1U; b < (2U * TABLE_N); ++b )
+        for ( size_t b = a + 1U; (2U * TABLE_N) > b; ++b )
         {
             TEST_ASSERT_TRUE_MESSAGE(strcmp(words[a], words[b]) != 0, words[a]);
         }

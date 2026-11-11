@@ -353,7 +353,7 @@ static const GuiSysCard *gui_syscard_of(GuiSheet kind)
     const GuiSysCard *found = NULL;
 
     for ( size_t i = 0U;
-         (i < (sizeof(TABLE) / sizeof(TABLE[0]))) && (NULL == found);
+         ((sizeof(TABLE) / sizeof(TABLE[0])) > i) && (NULL == found);
          ++i )
     {
         if ( TABLE[i].kind == kind )
@@ -811,6 +811,7 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
  * that grew would show its first eight, not garbage. */
 #define GUI_WIFI_SAVED_MAX   8U
 #define GUI_SSID_BYTES       33U  /**< A network's name as the rows keep it: the 32 bytes an SSID takes and the terminator. */
+#define GUI_NOTICE_BYTES     48U  /**< A notice about an app: its name, the words after it and the terminator. */
 
 #if CONFIG_KODEOS_WIFI
 /**
@@ -3905,7 +3906,7 @@ static void gui_dump(Gui * const me)
         KLOG_N(TAG, "  selftest: idle, no run kept");
     }
     KLOG_N(TAG, "  set: sel=%s",
-           (me->set_sel < (uint8_t)(sizeof(SET_NAMES) / sizeof(SET_NAMES[0])))
+           ((uint8_t)(sizeof(SET_NAMES) / sizeof(SET_NAMES[0])) > me->set_sel)
            ? SET_NAMES[me->set_sel] : "?");
 
     /* And the face's red arc: idle, filling or emptying, and how far. */
@@ -3967,7 +3968,7 @@ static void gui_dump(Gui * const me)
         }
         KLOG_N(TAG, "  assets: source=%s scenes=%u ready=%s", SRC[src],
                (unsigned)kgui_assets_scene_count(), ready);
-        for ( uint16_t i = 0U; i < kgui_assets_scene_count(); ++i )
+        for ( uint16_t i = 0U; kgui_assets_scene_count() > i; ++i )
         {
             const char *dead = "";
 
@@ -5805,7 +5806,7 @@ static void on_pill_clicked(lv_event_t *e)
         KLOG_D(TAG, "tap on a list in flight: acts on nothing");
         return;
     }
-    if ( (0 <= idx) && (idx < (int32_t)l_gui.row_count) )
+    if ( (0 <= idx) && ((int32_t)l_gui.row_count > idx) )
     {
         kgui_rail_t edge;
         int32_t const cy = lv_obj_get_style_y(l_gui.list.box, LV_PART_MAIN)
@@ -7472,7 +7473,7 @@ static void gui_shelf_refresh(Gui * const me)
     {
         gui_shelf_dress(me, i);
     }
-    if ( me->shelf_sel >= (int8_t)n )
+    if ( (int8_t)n <= me->shelf_sel )
     {
         me->shelf_sel = -1;
         if ( 0U < n )
@@ -7499,7 +7500,7 @@ static void gui_shelf_refresh(Gui * const me)
     }
     /* The name a refresh may have renamed (a folder's fields landing). */
     if ( (NULL != me->shelf_label) && (0 <= me->shelf_label_at)
-        && (me->shelf_label_at < (int8_t)n) )
+        && ((int8_t)n > me->shelf_label_at) )
     {
         lv_label_set_text(me->shelf_label, gui_shelf_title(me, me->shelf_label_at));
     }
@@ -7606,7 +7607,7 @@ static void gui_shelf_side(Gui * const me, int8_t dir)
     int32_t       x;
     int32_t       y;
 
-    if ( (0 > next) || (next >= (int32_t)me->shelf_n) )
+    if ( (0 > next) || ((int32_t)me->shelf_n <= next) )
     {
         /* An end: the ring leans out and comes back, and the rubber's thud says so. */
         gui_shelf_nudge(me, dir);
@@ -8249,7 +8250,7 @@ static void gui_list_release(Gui * const me, TouchEvt const * const t)
 
     gui_list_limits(me, &lo, &hi);
     kui_drag_set(&me->list_finger, false);
-    me->list_low = gui_list_tops(me) && (me->list_u < (-gui_list_walk(me) / 2.0F));
+    me->list_low = gui_list_tops(me) && ((-gui_list_walk(me) / 2.0F) > me->list_u);
     if ( gui_list_block(me) )
     {
         KLOG_I(TAG, "gesture: block let go %d px off its place, %d px/s",
@@ -8489,7 +8490,7 @@ static void gui_sheet_land(Gui * const me)
     int32_t const to     = gui_scroll_top_of(me->sheet_body, me->sheet_rows,
                                              me->sheet_n, anchor);
 
-    if ( to != lv_obj_get_scroll_y(me->sheet_body) )
+    if ( lv_obj_get_scroll_y(me->sheet_body) != to )
     {
         /* The travel announces its own end, and that end is not a new
          * landing: LVGL's own animation is used here rather than this file's
@@ -8811,7 +8812,7 @@ static bool gui_in_card_header(Gui const * const me, int32_t x, int32_t y)
     int32_t const     depth = y - me->sheet_rest_y;
     bool              in    = false;
 
-    if ( (0 <= depth) && (depth < gui_card_head_foot(me)) )
+    if ( (0 <= depth) && (gui_card_head_foot(me) > depth) )
     {
         int32_t const up    = kui_glass_inset(&glass, depth);
         int32_t const down  = kui_glass_inset(&glass, (glass.h - 1) - depth);
@@ -8821,7 +8822,7 @@ static bool gui_in_card_header(Gui const * const me, int32_t x, int32_t y)
         {
             inset = down;
         }
-        in = (x >= inset) && (x < (glass.w - inset));
+        in = (x >= inset) && ((glass.w - inset) > x);
     }
     return in;
 }
@@ -9163,7 +9164,7 @@ static void gui_gesture_reland(Gui * const me, TouchEvt const * const t)
 {
     kui_gesture_state_t const s     = me->gest.state;
     bool const                edge  = (KGUI_SWIPE_EDGE_BAND > me->gest_land_y)
-                                      || (me->gest_land_y >= ((int32_t)KBSP_LCD_V_RES - KGUI_SWIPE_EDGE_BAND));
+                                      || (((int32_t)KBSP_LCD_V_RES - KGUI_SWIPE_EDGE_BAND) <= me->gest_land_y);
     int32_t                   dx    = t->x - me->gest_land_x;
     int32_t                   dy    = t->y - me->gest_land_y;
 
@@ -9813,7 +9814,7 @@ static bool gui_level_read(lv_obj_t const * const track, bool done, int32_t *pm,
     {
         rel = 0;
     }
-    if ( rel > (w - h) )
+    if ( (w - h) < rel )
     {
         rel = w - h;
     }
@@ -10024,7 +10025,7 @@ static const char *gui_icon_status_name(uint8_t st)
     static const char *const NAMES[] = { "ok", "none", "size", "path",
                                          "busy" };
 
-    return (st < (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])))
+    return ((uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) > st)
            ? NAMES[st] : "?";
 }
 
@@ -10668,7 +10669,7 @@ static bool gui_entry_is_app(Gui const * const me, uint8_t i)
     bool app = name_is_bin(me->entries[i].name);
 
     for ( uint32_t k = 0U;
-         app && (k < (sizeof(SYSTEM_IMAGES) / sizeof(SYSTEM_IMAGES[0])));
+         app && ((sizeof(SYSTEM_IMAGES) / sizeof(SYSTEM_IMAGES[0])) > k);
          ++k )
     {
         if ( strcasecmp(me->entries[i].name, SYSTEM_IMAGES[k]) == 0 )
@@ -10743,7 +10744,7 @@ static void gui_select(Gui * const me, int32_t idx)
         {
             pick = 0;
         }
-        else if ( pick >= (int32_t)me->row_count )
+        else if ( (int32_t)me->row_count <= pick )
         {
             pick = (int32_t)me->row_count - 1;
         }
@@ -13080,7 +13081,7 @@ static void gui_remove_done(Gui * const me, uint8_t status)
     me->rm_out       = false;
     if ( NULL == words )
     {
-        char t[48];
+        char t[GUI_NOTICE_BYTES];
 
         KLOG_N(TAG, "remove: %s left the board after %u ms", me->rm_name,
                (unsigned)(khal_time_ms() - me->rm_since_ms));
@@ -15632,7 +15633,7 @@ static void gui_ring_visible(bool shown)
     {
         opa = LV_OPA_COVER;
     }
-    for ( size_t i = 0U; i < (sizeof(rings) / sizeof(rings[0])); i++ )
+    for ( size_t i = 0U; (sizeof(rings) / sizeof(rings[0])) > i; i++ )
     {
         lv_style_set_outline_opa(rings[i], opa);
         lv_obj_report_style_change(rings[i]);
@@ -18941,7 +18942,7 @@ static const char *gui_haptic_quiet_word(void)
     uint8_t const mask = kgui_haptic_quiet_mask();
     const char   *word = "nothing";
 
-    if ( mask == (uint8_t)(KGUI_HAPTIC_QUIET_MIC | KGUI_HAPTIC_QUIET_IMU) )
+    if ( (uint8_t)(KGUI_HAPTIC_QUIET_MIC | KGUI_HAPTIC_QUIET_IMU) == mask )
     {
         word = "both";
     }
@@ -19140,7 +19141,7 @@ static bool gui_color_reads(lv_color_t c)
         hi = lo;
         lo = swap;
     }
-    return hi >= (GUI_LIGHT_MIN_CONTRAST * lo);
+    return (GUI_LIGHT_MIN_CONTRAST * lo) <= hi;
 }
 
 /**
@@ -19291,7 +19292,7 @@ static void gui_sheet_clear(Gui * const me)
     lv_obj_scroll_to_y(me->sheet_card, 0, LV_ANIM_OFF);
 
     for ( uint8_t i = 0U;
-         i < (uint8_t)(sizeof(SAID) / sizeof(SAID[0])); ++i )
+         (uint8_t)(sizeof(SAID) / sizeof(SAID[0])) > i; ++i )
     {
         gui_sheet_say(me, SAID[i], "");
     }
@@ -19376,7 +19377,7 @@ static void gui_sheet_lines_centre(Gui const * const me, bool centre)
 {
     static const char *const LINES[] = { "line1", "line2", "line3" };
 
-    for ( uint8_t i = 0U; i < (uint8_t)(sizeof(LINES) / sizeof(LINES[0])); ++i )
+    for ( uint8_t i = 0U; (uint8_t)(sizeof(LINES) / sizeof(LINES[0])) > i; ++i )
     {
         lv_obj_t * const lbl = lv_obj_find_by_name(me->sheet_card, LINES[i]);
 
@@ -19452,7 +19453,7 @@ static void gui_sheet_line_y(Gui const * const me, int32_t first_y)
 {
     static const char *const LINES[] = { "line1", "line2", "line3" };
 
-    for ( uint8_t i = 0U; i < (uint8_t)(sizeof(LINES) / sizeof(LINES[0])); ++i )
+    for ( uint8_t i = 0U; (uint8_t)(sizeof(LINES) / sizeof(LINES[0])) > i; ++i )
     {
         lv_obj_t * const lbl = lv_obj_find_by_name(me->sheet_card, LINES[i]);
 
@@ -20921,7 +20922,7 @@ static void gui_sheet_ring_at(Gui * const me, uint8_t slot)
      * gui_sheet_land()'s reason. */
     lv_obj_update_layout(me->sheet_body);
     to = gui_scroll_top_of(me->sheet_body, me->sheet_rows, me->sheet_n, top);
-    if ( to != lv_obj_get_scroll_y(me->sheet_body) )
+    if ( lv_obj_get_scroll_y(me->sheet_body) != to )
     {
         /* Ours as well: the scroll end this brings is not a finger's to
          * land, and it stands on the row grid already. */
@@ -21069,7 +21070,7 @@ static const GuiWriteWords *gui_write_words(uint8_t what)
 
     uint8_t pick = what;
 
-    if ( pick >= (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) )
+    if ( (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) <= pick )
     {
         pick = (uint8_t)KWRITE_APP_RUN;
     }
@@ -21092,9 +21093,9 @@ static void gui_lines_join(char *out, size_t size, const char *l1, const char *l
     size_t used = 0U;
 
     out[0] = '\0';
-    for ( size_t i = 0U; i < (sizeof(lines) / sizeof(lines[0])); ++i )
+    for ( size_t i = 0U; (sizeof(lines) / sizeof(lines[0])) > i; ++i )
     {
-        if ( (NULL != lines[i]) && ('\0' != lines[i][0]) && (used < (size - 1U)) )
+        if ( (NULL != lines[i]) && ('\0' != lines[i][0]) && ((size - 1U) > used) )
         {
             const char *sep = "";
             int         n;
@@ -21107,7 +21108,7 @@ static void gui_lines_join(char *out, size_t size, const char *l1, const char *l
             if ( 0 < n )
             {
                 used += (size_t)n;
-                if ( used > (size - 1U) )
+                if ( (size - 1U) < used )
                 {
                     used = size - 1U;
                 }
@@ -21162,7 +21163,7 @@ static void gui_sheet_header_show(Gui const * const me, bool show)
 {
     static const char *const NAMES[] = { "handle", "hdr_disc" };
 
-    for ( uint8_t i = 0U; i < (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])); ++i )
+    for ( uint8_t i = 0U; (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) > i; ++i )
     {
         lv_obj_t * const obj = lv_obj_find_by_name(me->sheet_card, NAMES[i]);
 
@@ -21805,7 +21806,7 @@ static bool gui_sheet_row_acts(Gui const * const me, uint16_t tag)
             /* The doors act; every other row of the flat list changes where
              * it stands and clicks after the change (gui_screen_act()). */
             acts = ((uint16_t)GUI_TAG_MORE <= tag)
-                   && (tag < ((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT));
+                   && (((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT) > tag);
             break;
         }
         case GUI_SHEET_ZONE:
@@ -21892,7 +21893,7 @@ static void gui_sheet_act(Gui * const me, uint8_t idx, int8_t step)
                 gui_sheet_level_step(me, idx, step);
             }
             else if ( ((uint16_t)GUI_TAG_MORE <= tag)
-                     && (tag < ((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT)) )
+                     && (((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT) > tag) )
             {
                 if ( 0 == step )
                 {
@@ -22491,7 +22492,7 @@ static void gui_wifi_fill(Gui * const me)
      *    first, which is the order somebody would pick them in - with the
      *    strength of the ones in range. */
     for ( uint8_t i = 0U;
-         (i < me->saved_n) && (me->sheet_n < (uint8_t)(GUI_SHEET_ROWS_MAX - 1U));
+         (i < me->saved_n) && ((uint8_t)(GUI_SHEET_ROWS_MAX - 1U) > me->sheet_n);
          ++i )
     {
         char s[24];
@@ -22523,7 +22524,7 @@ static void gui_wifi_fill(Gui * const me)
      *    nothing a press could do with it - which is what the row after the
      *    list is for, so the list leaves it its place. */
     for ( uint8_t i = 0U;
-         (i < me->scan_n) && (me->sheet_n < (uint8_t)(GUI_SHEET_ROWS_MAX - 1U));
+         (i < me->scan_n) && ((uint8_t)(GUI_SHEET_ROWS_MAX - 1U) > me->sheet_n);
          ++i )
     {
         bool const open = (0U == me->scan_auth[i]);
@@ -22716,7 +22717,7 @@ static const char *gui_kbd_stage_name(uint8_t stage)
 {
     static const char *const NAMES[] = { "idle", "name", "password", "joining", "ble" };
 
-    if ( stage >= (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) )
+    if ( (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) <= stage )
     {
         return "?";
     }
@@ -23091,7 +23092,7 @@ static void gui_kbd_tick(Gui * const me)
         uint32_t const at = ((now - me->kbd_join_ms) / GUI_KBD_JOIN_DOT_MS)
                             % (uint32_t)(sizeof(WALK) / sizeof(WALK[0]));
 
-        if ( at != (uint32_t)me->kbd_join_dot )
+        if ( (uint32_t)me->kbd_join_dot != at )
         {
             me->kbd_join_dot = (uint8_t)at;
             kgui_keyboard_hold(WALK[at], now);
@@ -25132,7 +25133,7 @@ static const GuiListPage *gui_sheet_list_page(Gui const * const me,
     }
 
     for ( size_t i = 0U;
-         (i < (sizeof(s_list_pages) / sizeof(s_list_pages[0])))
+         ((sizeof(s_list_pages) / sizeof(s_list_pages[0])) > i)
          && (NULL == found); ++i )
     {
         if ( s_list_pages[i].list == kind )
@@ -26664,7 +26665,7 @@ static void gui_face_poll(Gui * const me)
     {
         struct tm t;
 
-        if ( (me->hour_was == -1) && (0 <= h) )
+        if ( (-1 == me->hour_was) && (0 <= h) )
         {
             me->hour_due = true;   /* The time became true. */
         }
@@ -28222,7 +28223,7 @@ static void gui_deep_tick(Gui * const me)
                 lv_obj_t * const both[] = { me->deep_digit, me->deep_words };
 
                 me->deep_fading = true;
-                for ( size_t i = 0U; i < (sizeof(both) / sizeof(both[0])); ++i )
+                for ( size_t i = 0U; (sizeof(both) / sizeof(both[0])) > i; ++i )
                 {
                     lv_anim_t a;
 
@@ -28235,7 +28236,7 @@ static void gui_deep_tick(Gui * const me)
                 }
             }
         }
-        else if ( left > -(int32_t)GUI_DEEP_BLACK_MS )
+        else if ( -(int32_t)GUI_DEEP_BLACK_MS < left )
         {
             /* Black, and a frame or two of it on the glass. */
             lv_obj_set_hidden(me->deep_digit, true);
@@ -28450,7 +28451,7 @@ static void gui_settle_go(Gui * const me)
  */
 static void gui_settle_learn(Gui * const me, uint8_t pct)
 {
-    if ( pct != gui_settle_level(me, me->settle_at) )
+    if ( gui_settle_level(me, me->settle_at) != pct )
     {
         me->rest_stored = pct;
         me->settle_at   = 0U;
@@ -28902,7 +28903,7 @@ static bool gui_face_kody_ready(Gui * const me)
              * paint has run yet on a boot that came up on Apps. */
             gui_face_time_paint(me);
             id = gui_face_scene_want(me);
-            if ( me->face_stood == (uint16_t)id )
+            if ( (uint16_t)id == me->face_stood )
             {
                 /* He stands in it already. */
             }
@@ -29409,7 +29410,7 @@ static void gui_assets_cmd(Gui const * const me, GuiAssetsCmdEvt const * const e
         {
             why = "builtin";
         }
-        if ( e->cmd < (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) )
+        if ( (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) > e->cmd )
         {
             kgui_assets_refuse(WORDS[e->cmd], why);
         }
@@ -29526,7 +29527,7 @@ static void gui_kody_fill(Gui * const me)
         (void)gui_sheet_row_plain(me, "Updating", prog, KUI_COLOR_SURFACE);
         word = NULL;
     }
-    else if ( kgui_assets_install_why()[0] != '\0' )
+    else if ( '\0' != kgui_assets_install_why()[0] )
     {
         (void)gui_sheet_row_plain(me, "The update failed", kgui_assets_install_why(),
                                   KUI_COLOR_SURFACE);
@@ -29548,7 +29549,7 @@ static void gui_kody_fill(Gui * const me)
             me->sheet_tag[me->sheet_n - 1U] = (uint16_t)GUI_TAG_KODY_UPDATE;
         }
     }
-    if ( gui_kody_note(me)[0] != '\0' )
+    if ( '\0' != gui_kody_note(me)[0] )
     {
         gui_sheet_caption(me, gui_kody_note(me));
     }
@@ -29947,7 +29948,7 @@ static void gui_zone_migrate(Gui * const me, bool stored)
         uint8_t at = UINT8_MAX;
 
         if ( (khal_nvs_get_u8(GUI_NVS_NAMESPACE, "tzi", &at) == KODE_OK)
-            && (at < (sizeof(APOCRIFA) / sizeof(APOCRIFA[0]))) )
+            && ((sizeof(APOCRIFA) / sizeof(APOCRIFA[0])) > at) )
         {
             KLOG_N(TAG, "zone: %s comes from the apocrifa", APOCRIFA[at]);
             gui_zone_ask(me, APOCRIFA[at]);
@@ -30203,7 +30204,7 @@ static const GuiLock *gui_lock_choice(uint32_t s)
  * Once, at boot, beside the zone (Gui_waiting). The key holds one uint32_t
  * of seconds, 0 for never, as a record of four bytes: khal_nvs's one scalar
  * is a byte, ten minutes are 600 s, and a fixed-size record is the seam's
- * word for anything wider. A missing key is the default, two minutes; a
+ * word for anything wider. A missing key is the default, one minute; a
  * record that does not read, is not four bytes long or holds a time the
  * list does not offer is the default as well, said with a warning. Either
  * way the boot log names the time that came of it, once:
@@ -31794,7 +31795,7 @@ static void gui_pass_measure(Gui * const me, uint32_t t0, bool drew)
                    (unsigned)(wait / 1000U),
                    (unsigned)((wait % 1000U) / 100U));
         }
-        else if ( wait >= (GUI_PRESS_FRAME_MS * 1000U) )
+        else if ( (GUI_PRESS_FRAME_MS * 1000U) <= wait )
         {
             me->press_timing = false;
             KLOG_D(TAG, "button: nothing to draw within %u ms",
@@ -33640,7 +33641,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                  * mailbox - has nothing to announce. */
                 if ( '\0' != d->name[0] )
                 {
-                    char t[48];
+                    char t[GUI_NOTICE_BYTES];
 
                     (void)snprintf(t, sizeof(t), "%.32s is ready", d->name);
                     gui_visit(me, GUI_VISIT_NOTICE, t);
@@ -33812,7 +33813,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             /* And the `display` row, answered on the same two buttons. There
              * is no line to write - AO_Display drops every flush while the
              * row has the glass - so the state is taken for the pad alone. */
-            if ( Q_EVT_CAST(DisplayTestEvt)->phase == DISPLAY_TEST_ASK )
+            if ( DISPLAY_TEST_ASK == Q_EVT_CAST(DisplayTestEvt)->phase )
             {
                 gui_test_take(me);
                 status = Q_TRAN(&Gui_btn_test);
@@ -36742,7 +36743,7 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
          * there, and going up does not re-enter it. A system card that
          * covered a settings page asks for it as it goes. */
         if ( gui_sheet_is_system(me->sheet) && gui_sheet_is_page(me->sheet_under)
-            && (home == Q_STATE_CAST(&Gui_settings)) )
+            && (Q_STATE_CAST(&Gui_settings) == home) )
         {
             gui_sheet_reopen(me);
         }
@@ -36852,7 +36853,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
      * shell's for `gui` - at most 11 characters, all GuiStateEvt.state
      * carries - the host's for `gui` once the card has gone, and the
      * screen's for the log. */
-    bool const  over_face = (home == Q_STATE_CAST(&Gui_awake));
+    bool const  over_face = (Q_STATE_CAST(&Gui_awake) == home);
     const char *shell     = "sheet_grid";
     const char *host      = "settings";
     const char *screen    = "settings grid";
@@ -36864,7 +36865,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
         host   = "face";
         screen = "face";
     }
-    else if ( home == Q_STATE_CAST(&Gui_browsing) )
+    else if ( Q_STATE_CAST(&Gui_browsing) == home )
     {
         shell  = "sheet_home";
         host   = "browsing";
@@ -37068,7 +37069,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                  * refused out loud: the press was never meant for the card. */
                 status = Q_HANDLED();
             }
-            else if ( home == Q_STATE_CAST(&Gui_settings) )
+            else if ( Q_STATE_CAST(&Gui_settings) == home )
             {
                 /* Over the grid, home is a screen away and that door is the
                  * host's: its handler owns the curtain, and the curtain's
@@ -37094,7 +37095,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                                 "is AO_AppMgr's and its end is still taken",
                            me->rm_name);
                 }
-                if ( home == Q_STATE_CAST(&Gui_browsing) )
+                if ( Q_STATE_CAST(&Gui_browsing) == home )
                 {
                     me->sheet_locked = false;
                     gui_level_home(me);
@@ -37145,8 +37146,8 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 {
                     me->page_scroll_n = 0U;
                 }
-                else if ( me->page_scroll_n < (uint8_t)(sizeof(me->page_scroll)
-                                                       / sizeof(me->page_scroll[0])) )
+                else if ( (uint8_t)(sizeof(me->page_scroll)
+                                    / sizeof(me->page_scroll[0])) > me->page_scroll_n )
                 {
                     /* The page stands where it stood when this one goes back. */
                     me->page_scroll[me->page_scroll_n] = lv_obj_get_scroll_y(me->sheet_body);
@@ -37958,7 +37959,7 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
             break;
         }
         case AUTOTEST_HOLD_SIG: {
-            if ( Q_EVT_CAST(AutotestHoldEvt)->client == AUTOTEST_CLIENT_GUI )
+            if ( AUTOTEST_CLIENT_GUI == Q_EVT_CAST(AutotestHoldEvt)->client )
             {
                 me->test_held = true;
                 gui_test_say("Now we need you\nTOP to continue");

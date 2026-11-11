@@ -97,7 +97,7 @@ void test_nothing_is_written_past_the_buffer(void)
 
     (void)memset(buf, (int)GUARD_BYTE, sizeof(buf));
     (void)kgui_trim_spaces("  abcdefghijklmnopqrstuvwxyz  ", buf, NAME_MAX_TEST + 1U);
-    for ( i = NAME_MAX_TEST + 1U; i < sizeof(buf); i++ )
+    for ( i = NAME_MAX_TEST + 1U; sizeof(buf) > i; i++ )
     {
         TEST_ASSERT_EQUAL_HEX8(GUARD_BYTE, (uint8_t)buf[i]);
     }

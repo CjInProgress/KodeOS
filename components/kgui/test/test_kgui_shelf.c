@@ -55,7 +55,7 @@ void test_shelf_opa_fades_before_the_corner(void)
 void test_shelf_never_shows_in_the_corner(void)
 {
     /* No disc that shows at all reaches out of the corner's circle. */
-    for ( int32_t cy = KGUI_SHELF_FULL_Y; cy > -KGUI_RAIL_ICON; --cy )
+    for ( int32_t cy = KGUI_SHELF_FULL_Y; -KGUI_RAIL_ICON < cy; --cy )
     {
         if ( kgui_shelf_opa(cy) == 0U )
         {
@@ -66,10 +66,10 @@ void test_shelf_never_shows_in_the_corner(void)
             for ( uint8_t i = 0U; i < n; ++i )
             {
                 int32_t const x  = kgui_shelf_x(i, n);
-                int32_t const kx = (x < (WIDTH / 2)) ? CORNER : (WIDTH - CORNER);
+                int32_t const kx = ((WIDTH / 2) > x) ? CORNER : (WIDTH - CORNER);
 
                 TEST_ASSERT_TRUE(cy - DISC_R >= 0);
-                if ( (CORNER > cy) && (((CORNER > x) || (x > (WIDTH - CORNER)))) )
+                if ( (CORNER > cy) && (((CORNER > x) || ((WIDTH - CORNER) < x))) )
                 {
                     float const d = hypotf((float)(x - kx), (float)(cy - CORNER));
 
