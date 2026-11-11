@@ -9,13 +9,14 @@
 
 size_t kgui_trim_spaces(const char *typed, char *out, size_t size)
 {
-    size_t skip = 0U;
-    size_t len  = 0U;
+    size_t len = 0U;
 
     if ( (NULL != out) && (0U < size) )
     {
         if ( NULL != typed )
         {
+            size_t skip = 0U;
+
             while ( ' ' == typed[skip] )
             {
                 ++skip;
