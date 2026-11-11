@@ -50,7 +50,7 @@ SS = 8
 INK = (0x19, 0x19, 0x19)      # Soft Black
 GOLD = (0xFF, 0xAC, 0x00)     # Bold Yellow
 DISC = (0xC2, 0xBA, 0xB3)     # Medium Grey, the disc's colour: the sheet only
-BRAND_FONT = Path.home() / "Documents/Kode/5-Marca/kode-brand/fonts/outfit/Outfit[wght].ttf"
+BRAND_FONT = Path(__file__).resolve().parents[3] / "sdk/components/kui/fonts/assets/Outfit-Bold.ttf"
 
 
 def fill(body, edge=0.0):
@@ -337,12 +337,10 @@ const lv_image_dsc_t *kgui_folder_art(const char *key)
 
 
 def font(size):
-    """The brand's Outfit for the sheet's names when it is there, any font when not."""
+    """The kit's Outfit Bold for the sheet's names when it is there, any font when not."""
     try:
-        f = ImageFont.truetype(str(BRAND_FONT), size)
-        f.set_variation_by_axes([600])
-        return f
-    except (OSError, AttributeError):
+        return ImageFont.truetype(str(BRAND_FONT), size)
+    except OSError:
         return ImageFont.load_default()
 
 

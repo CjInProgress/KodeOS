@@ -70,5 +70,5 @@ answers one record and then `>ok`:
 THIRD_PARTY_NOTICES.txt lists the third-party software compiled into
 kodeos.bin and the licences it is used under. It is not flashed.
 
-Full detail: "Recovery flash: bootloader + factory" in the kodeOS README,
-https://github.com/kodediy/KodeOs-demo#readme
+Full detail: "Building and flashing" in the kodeOS docs,
+https://docs.kode.diy/internals/building-and-flashing

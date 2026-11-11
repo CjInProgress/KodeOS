@@ -22,7 +22,7 @@ extern "C" {
 
 #define KGUI_LAUNCH_FLIGHT_MS    220U  /**< The icon's flight: the motion table's. */
 #define KGUI_LAUNCH_SPIN_MS      528U  /**< The Ring turns this long before it closes: six of its positions. Tunable. */
-#define KGUI_LAUNCH_HOLD_MS      495U  /**< The Ring stands whole and green this long before the fade (Luismi, 5-nov). */
+#define KGUI_LAUNCH_HOLD_MS      495U  /**< The Ring stands whole and green this long before the fade. */
 #define KGUI_LAUNCH_FADE_STEPS   3U    /**< Steps of the fade to black. */
 #define KGUI_LAUNCH_FADE_STEP_MS 50U   /**< Between two of them. Tunable. */
 #define KGUI_LAUNCH_DIM_STEPS    4U    /**< Steps the glass darkens in during the flight. */

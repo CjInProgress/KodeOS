@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /**
  * @file kgui_off.c
- * @brief The arc's numbers (kgui_off.h); adapts kodediy/kode-dot-os, kshell_power.c,
+ * @brief The arc's numbers (kgui_off.h); adapts kshell's kshell_power.c,
  *        whose arc timing (from 2 s to 5 s) it keeps.
  */
 #include "kgui_off.h"

@@ -11,8 +11,7 @@ CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # This image is kodeOS, so every boot comes back to it. (kdefs)
 CONFIG_KODEOS_BOOT_ROLE_OS=y
 
-# The app a board leaves the factory with, by project name (kodediy/
-# kode-app-onboarding): the factory reset keeps it and runs it at the first
+# The app a board leaves the factory with, by project name: the factory reset keeps it and runs it at the first
 # power-on after ship mode. (kdefs)
 CONFIG_KODEOS_WELCOME_APP="onboarding"
 

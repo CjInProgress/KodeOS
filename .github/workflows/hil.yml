@@ -72,7 +72,7 @@ jobs:
           gh run download "$run_id" --repo "$REPO" --name release-dist --dir dist
           echo "sums=$(sha256sum dist/SHA256SUMS.txt | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
 
-      # The suite is provisioned on the rig (kodediy/kode-hil, in $KODE_HIL),
+      # The suite is provisioned on the rig (in $KODE_HIL),
       # with the unit's port named by udev from its MAC.
       - name: Run the rig
         env:
