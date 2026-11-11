@@ -811,6 +811,7 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
  * that grew would show its first eight, not garbage. */
 #define GUI_WIFI_SAVED_MAX   8U
 #define GUI_SSID_BYTES       33U  /**< A network's name as the rows keep it: the 32 bytes an SSID takes and the terminator. */
+#define GUI_NOTICE_BYTES     48U  /**< A notice about an app: its name, the words after it and the terminator. */
 
 #if CONFIG_KODEOS_WIFI
 /**
@@ -13080,7 +13081,7 @@ static void gui_remove_done(Gui * const me, uint8_t status)
     me->rm_out       = false;
     if ( NULL == words )
     {
-        char t[48];
+        char t[GUI_NOTICE_BYTES];
 
         KLOG_N(TAG, "remove: %s left the board after %u ms", me->rm_name,
                (unsigned)(khal_time_ms() - me->rm_since_ms));
@@ -33640,7 +33641,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                  * mailbox - has nothing to announce. */
                 if ( '\0' != d->name[0] )
                 {
-                    char t[48];
+                    char t[GUI_NOTICE_BYTES];
 
                     (void)snprintf(t, sizeof(t), "%.32s is ready", d->name);
                     gui_visit(me, GUI_VISIT_NOTICE, t);
@@ -37145,8 +37146,8 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 {
                     me->page_scroll_n = 0U;
                 }
-                else if ( me->page_scroll_n < (uint8_t)(sizeof(me->page_scroll)
-                                                       / sizeof(me->page_scroll[0])) )
+                else if ( (uint8_t)(sizeof(me->page_scroll)
+                                    / sizeof(me->page_scroll[0])) > me->page_scroll_n )
                 {
                     /* The page stands where it stood when this one goes back. */
                     me->page_scroll[me->page_scroll_n] = lv_obj_get_scroll_y(me->sheet_body);
