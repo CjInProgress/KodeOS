@@ -38,6 +38,8 @@ run_suite kgui_group test_kgui_group.c ../kgui_group.c kgui_group_stubs.c "$out/
 run_suite kgui_dtext test_kgui_dtext.c ../kgui_dtext.c
 # The scenes' English words are a table: no stubs.
 run_suite kgui_scene_label test_kgui_scene_label.c ../kgui_scene_label.c
+# A length of time's words and the step round a setting's: a table, no stubs.
+run_suite kgui_span_label test_kgui_span_label.c ../kgui_span_label.c
 # The arc runs the edge's path: its numbers come from kgui_edge.h.
 run_suite kgui_off test_kgui_off.c ../screens/kgui_off.c
 # The edge's curves are pure: no LVGL, no stubs.
