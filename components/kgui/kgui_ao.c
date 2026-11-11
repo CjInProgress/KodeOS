@@ -30204,7 +30204,7 @@ static const GuiLock *gui_lock_choice(uint32_t s)
  * Once, at boot, beside the zone (Gui_waiting). The key holds one uint32_t
  * of seconds, 0 for never, as a record of four bytes: khal_nvs's one scalar
  * is a byte, ten minutes are 600 s, and a fixed-size record is the seam's
- * word for anything wider. A missing key is the default, two minutes; a
+ * word for anything wider. A missing key is the default, one minute; a
  * record that does not read, is not four bytes long or holds a time the
  * list does not offer is the default as well, said with a warning. Either
  * way the boot log names the time that came of it, once:
