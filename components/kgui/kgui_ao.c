@@ -37934,6 +37934,11 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
 
     switch ( e->sig )
     {
+        case Q_EXIT_SIG: {
+            me->disp_row = false;
+            status = Q_HANDLED();
+            break;
+        }
         case Q_ENTRY_SIG: {
             s_gui_state = "selftest";
             me->bot_hold = false;
@@ -38015,7 +38020,16 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
         }
         case DISPLAY_TEST_SIG: {
             /* Nothing to write: AO_Display drops every flush while its row
-             * has the glass, and the colour on it is the question. */
+             * has the glass, and the colour on it is the question. No pass
+             * draws until the row ends (see Gui_running). */
+            if ( DISPLAY_TEST_DONE == Q_EVT_CAST(DisplayTestEvt)->phase )
+            {
+                me->disp_row = false;
+            }
+            else
+            {
+                me->disp_row = true;
+            }
             status = Q_HANDLED();
             break;
         }
