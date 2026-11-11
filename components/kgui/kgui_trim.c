@@ -22,7 +22,7 @@ size_t kgui_trim_spaces(const char *typed, char *out, size_t size)
                 ++skip;
             }
             len = strlen(&typed[skip]);
-            if ( len > (size - 1U) )
+            if ( (size - 1U) < len )
             {
                 len = size - 1U;
             }

@@ -407,7 +407,7 @@ const lv_image_dsc_t *kgui_list_group_glyph(const char *name, uint32_t *scale)
     *scale = list_scale_of(LIST_GLYPH_SRC_APPS);
     if ( NULL != name )
     {
-        for ( size_t i = 0U; i < (sizeof(s_glyphs) / sizeof(s_glyphs[0])); ++i )
+        for ( size_t i = 0U; (sizeof(s_glyphs) / sizeof(s_glyphs[0])) > i; ++i )
         {
             if ( 0 == strcmp(name, s_glyphs[i].name) )
             {

@@ -234,7 +234,7 @@ static void level_paint(const char *name, int32_t pm, const lv_image_dsc_t *glyp
         lv_obj_set_style_text_font(fig, font, LV_PART_MAIN);
         lv_label_set_text(fig, text);
         kgui_text_size(&said, text, font);
-        if ( fw >= (KGUI_CC_FIG_IN_X + said.x + KGUI_CC_FIG_OUT_GAP) )
+        if ( (KGUI_CC_FIG_IN_X + said.x + KGUI_CC_FIG_OUT_GAP) <= fw )
         {
             lv_obj_set_x(fig, KGUI_CC_FIG_IN_X);
             lv_obj_set_style_text_color(fig, KUI_COLOR_TEXT, LV_PART_MAIN);
@@ -658,7 +658,7 @@ void kgui_screen_settings_build(void)
     lv_obj_add_style(scr, &kui_style_screen, 0);
     lv_obj_set_scrollable(scr, false);
 
-    for ( uint32_t i = 0U; i < (sizeof(s_circles) / sizeof(s_circles[0])); i++ )
+    for ( uint32_t i = 0U; (sizeof(s_circles) / sizeof(s_circles[0])) > i; i++ )
     {
         circle_build(scr, &s_circles[i]);
     }

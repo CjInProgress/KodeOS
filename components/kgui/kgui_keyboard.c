@@ -396,7 +396,7 @@ static kbd_view_t kbd_compose(uint32_t now_ms)
         int32_t const room = KBD_ROOM_PX - view.text_w;
         int32_t const fit  = room / KBD_DOT_PITCH;
 
-        if ( view.dots > (size_t)fit )
+        if ( (size_t)fit < view.dots )
         {
             view.dots = (size_t)fit;
         }
@@ -866,14 +866,14 @@ static bool kbd_build_key_words(lv_obj_t *key, size_t g)
 {
     bool ok = true;
 
-    if ( (KEY_OF[g] == KUI_MULTITAP_KEY_MODE) || (KEY_OF[g] == KUI_MULTITAP_KEY_DELETE) )
+    if ( (KUI_MULTITAP_KEY_MODE == KEY_OF[g]) || (KUI_MULTITAP_KEY_DELETE == KEY_OF[g]) )
     {
         s_ui.main[g] = kbd_label(key, &kui_font_name, KUI_COLOR_TEXT);
         ok = (NULL != s_ui.main[g]);
         if ( ok )
         {
             lv_obj_center(s_ui.main[g]);
-            if ( KEY_OF[g] == KUI_MULTITAP_KEY_DELETE )
+            if ( KUI_MULTITAP_KEY_DELETE == KEY_OF[g] )
             {
                 lv_label_set_text_static(s_ui.main[g], "Delete");
             }
@@ -931,7 +931,7 @@ static bool kbd_build_keys(void)
              * the mode key and Delete - Light Grey. Pressed, each steps to the
              * other grey: the pill's resting grey would put Soft Black ink on
              * a dark ground. */
-            if ( (KEY_OF[g] == KUI_MULTITAP_KEY_MODE) || (KEY_OF[g] == KUI_MULTITAP_KEY_DELETE) )
+            if ( (KUI_MULTITAP_KEY_MODE == KEY_OF[g]) || (KUI_MULTITAP_KEY_DELETE == KEY_OF[g]) )
             {
                 lv_obj_set_style_bg_color(key, KUI_COLOR_TEXT_ON_BG, 0);
                 lv_obj_set_style_bg_color(key, KUI_COLOR_TEXT_MUTED, LV_STATE_PRESSED);

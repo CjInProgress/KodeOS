@@ -165,7 +165,7 @@ static bool osrel_version(const char *text, uint16_t groups[KGUI_OSREL_GROUPS])
     uint32_t group = 0U;
     bool     reads = (NULL != text);
 
-    while ( reads && (group < (uint32_t)KGUI_OSREL_GROUPS) )
+    while ( reads && ((uint32_t)KGUI_OSREL_GROUPS > group) )
     {
         uint32_t value  = 0U;
         uint32_t digits = 0U;
@@ -177,17 +177,17 @@ static bool osrel_version(const char *text, uint16_t groups[KGUI_OSREL_GROUPS])
             value = (value * (uint32_t)OSREL_DECIMAL) + digit;
             ++digits;
             ++at;
-            if ( digits > (uint32_t)KGUI_OSREL_GROUP_DIGITS )
+            if ( (uint32_t)KGUI_OSREL_GROUP_DIGITS < digits )
             {
                 break;
             }
         }
-        reads = (0U < digits) && (digits <= (uint32_t)KGUI_OSREL_GROUP_DIGITS);
+        reads = (0U < digits) && ((uint32_t)KGUI_OSREL_GROUP_DIGITS >= digits);
         if ( reads )
         {
             groups[group] = (uint16_t)value;
             ++group;
-            if ( group < (uint32_t)KGUI_OSREL_GROUPS )
+            if ( (uint32_t)KGUI_OSREL_GROUPS > group )
             {
                 reads = ('.' == text[at]);
                 ++at;
@@ -268,7 +268,7 @@ bool kgui_osrel_newer(const char *latest, const char *running)
     {
         bool decided = false;
 
-        for ( uint32_t i = 0U; (i < (uint32_t)KGUI_OSREL_GROUPS) && (!decided); ++i )
+        for ( uint32_t i = 0U; ((uint32_t)KGUI_OSREL_GROUPS > i) && (!decided); ++i )
         {
             if ( theirs[i] != ours[i] )
             {

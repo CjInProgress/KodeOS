@@ -576,8 +576,8 @@ static void curtain_grow_place(int32_t off)
          * corner. */
         int32_t const cx = s_from_area.x1 + (lv_area_get_width(&s_from_area) / 2);
         int32_t const cy = s_from_area.y1 + (lv_area_get_height(&s_from_area) / 2);
-        int32_t const dx = (cx > (CURTAIN_W - cx)) ? cx : (CURTAIN_W - cx);
-        int32_t const dy = (cy > (CURTAIN_H - cy)) ? cy : (CURTAIN_H - cy);
+        int32_t const dx = ((CURTAIN_W - cx) < cx) ? cx : (CURTAIN_W - cx);
+        int32_t const dy = ((CURTAIN_H - cy) < cy) ? cy : (CURTAIN_H - cy);
         int32_t const r  = curtain_lerp(lv_area_get_width(&s_from_area) / 2,
                                         curtain_isqrt((dx * dx) + (dy * dy)) + 1, k);
 

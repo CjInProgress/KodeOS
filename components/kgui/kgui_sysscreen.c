@@ -271,7 +271,7 @@ void kgui_sys_lift(kgui_sys_t *s, int32_t dy)
         lv_obj_t * const parts[] = { s->icon.disc, s->blank, s->glyph, s->word, s->figure, s->unit,
                                    s->name, s->second };
 
-        for ( size_t i = 0U; i < (sizeof(parts) / sizeof(parts[0])); ++i )
+        for ( size_t i = 0U; (sizeof(parts) / sizeof(parts[0])) > i; ++i )
         {
             lv_obj_set_style_translate_y(parts[i], dy, LV_PART_MAIN);
         }
