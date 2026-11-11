@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* SPDX-License-Identifier: CC-BY-SA-4.0 */
 /* Written by tools/kody_apocrifa.py from the apocrifa's kody_anims: never by hand. */
 #include "kgui_kody_rest.h"
 

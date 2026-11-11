@@ -87,6 +87,8 @@ run_suite kgui_pack_fit test_kgui_pack_fit.c ../kgui_pack_fit.c
 run_suite kgui_wifi -I"$sdk/kdrv/radio/include" test_kgui_wifi.c ../kgui_wifi.c
 # The update service's answer and About's row: no SDK header at all.
 run_suite kgui_osrel test_kgui_osrel.c ../kgui_osrel.c
+# The spaces a typed name loses at both ends.
+run_suite kgui_trim test_kgui_trim.c ../kgui_trim.c
 # Kody's line drawing at Rest is pure too.
 run_suite kgui_rest test_kgui_rest.c ../kgui_rest.c
 

@@ -187,7 +187,7 @@ void kgui_list_disc_dress(lv_obj_t *disc, int32_t side, lv_color_t ground,
         /* The picture rides INSIDE the disc, as a glyph does: the disc keeps its
          * ground under it, so an icon with a clear margin sits in the same round
          * disc as an app with none, and the disc's corner clip cuts the picture
-         * round (Luismi, 2026-11-03: two treatments in one list). */
+         * round (two treatments in one list). */
         lv_obj_set_style_bg_color(disc, ground, 0);
         lv_obj_set_style_bg_opa(disc, LV_OPA_COVER, 0);
         if ( (const void *)pic != lv_image_get_src(img) )

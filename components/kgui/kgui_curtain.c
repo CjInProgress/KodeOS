@@ -481,7 +481,7 @@ static int32_t curtain_isqrt(int32_t v)
  *
  * A window with clip_corner makes LVGL compose a layer of the whole glass for
  * every frame, which is what made the growth drop frames. This copies each row
- * in up to three runs of the two opaque pictures (Luismi, 5-nov), and LVGL draws
+ * in up to three runs of the two opaque pictures, and LVGL draws
  * one opaque picture, and only the part that changed.
  *
  * @param cx The circle's centre.
@@ -571,7 +571,7 @@ static void curtain_grow_place(int32_t off)
 
     if ( s_grow_from )
     {
-        /* A circle all the way (Luismi, 5-nov): it grows from the one it
+        /* A circle all the way: it grows from the one it
          * stands on, about its centre, until it covers the glass's farthest
          * corner. */
         int32_t const cx = s_from_area.x1 + (lv_area_get_width(&s_from_area) / 2);

@@ -19,12 +19,12 @@
 #define KBD_GAP_PX        10                                           /**< Between two keys across, and between the field and the pill. */
 #define KBD_TITLE_Y       24                                           /**< Where the network's name starts: kshell's title row. */
 #define KBD_TITLE_W       260                        /**< How wide the name may be before it is cut with dots: clear of the card's top corners at its row. */
-#define KBD_FIELD_Y       44                                           /**< The field's top: the card's first row, no title over it (Luismi, 4-nov). */
+#define KBD_FIELD_Y       44                                           /**< The field's top: the card's first row, no title over it. */
 #define KBD_FIELD_X       (KBD_SIDE_PX + KBD_FIELD_INSET)               /**< The field's left: inset so its focus ring stays inside the glass's top corners (review of 5-nov). */
 #define KBD_FIELD_INSET   16                                           /**< How far in from the keys' sides the field stands, each side. */
 #define KBD_FIELD_H       64                                           /**< The field's height, and the pill's: one capsule (kshell's 64). */
 #define KBD_GO_W          200                                          /**< The yellow pill's width: centred under the keys, the primary action at the foot (ui-dot). */
-#define KBD_GO_Y          418                                          /**< The yellow pill's top, under the keys and far from the field's Show (Luismi, 4-nov). */
+#define KBD_GO_Y          418                                          /**< The yellow pill's top, under the keys and far from the field's Show. */
 #define KBD_FIELD_W       (KBD_ROW_W - (2 * KBD_FIELD_INSET))          /**< The field takes the row less its insets: the password has the room. */
 #define KBD_SHOW_WORD_W   64                                           /**< The field's right end keeps this for its "Show" or "Hide". */
 #define KBD_FIELD_PAD     20                         /**< Between the field's end and its first character. */
@@ -728,8 +728,8 @@ static bool kbd_build_title(void)
         lv_label_set_long_mode(s_ui.title, LV_LABEL_LONG_MODE_DOTS);
         lv_obj_set_style_text_align(s_ui.title, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text(s_ui.title, "");
-        /* No title: the network is the one the person just picked (Luismi,
-         * 4-nov). The label stays for the code that writes it. */
+        /* No title: the network is the one the person just picked. The
+         * label stays for the code that writes it. */
         lv_obj_set_hidden(s_ui.title, true);
     }
     return NULL != s_ui.title;
@@ -819,7 +819,7 @@ static bool kbd_build_show(void)
 
     if ( NULL != row )
     {
-        /* Show is the field itself (Luismi, 4-nov): a tap on the password
+        /* Show is the field itself: a tap on the password
          * shows or hides it, and its word stands at the field's right end,
          * far from Join at the card's foot. */
         lv_obj_set_style_radius(row, KUI_RADIUS_GLASS, 0);

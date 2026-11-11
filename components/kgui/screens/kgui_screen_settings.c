@@ -272,7 +272,7 @@ static const lv_image_dsc_t *level_glyph(kgui_level_t which, int32_t pm)
         step = (p * KGUI_CC_SUN_STEPS) / (KGUI_CC_LEVEL_FULL + 1);
         return SUNS[(KGUI_CC_SUN_STEPS <= step) ? (KGUI_CC_SUN_STEPS - 1) : step];
     }
-    /* Just above nothing the Dot vibrates and does not sound (Luismi, 5-nov). */
+    /* Just above nothing the Dot vibrates and does not sound. */
     if ( level_vibrates(which, pm) )
     {
         return &kui_glyph_vib_40;
@@ -479,7 +479,7 @@ static void battery_build(lv_obj_t *parent)
     }
 
     /* The charge as a figure, on a small dark chip of its own, so it reads
-     * the same over the green and over the black (Luismi, 4-nov). */
+     * the same over the green and over the black. */
     lv_obj_t * const chip = lv_obj_create(c);
 
     if ( NULL != chip )
@@ -509,7 +509,7 @@ static void battery_build(lv_obj_t *parent)
 
 /**
  * @brief The share circle, between the battery and Turn off: there, and off,
- *        until sharing exists (Luismi, 4-nov). Not a control yet: it takes no
+ *        until sharing exists. Not a control yet: it takes no
  *        press and the pad's cursor passes it by.
  *
  * @param parent The screen.
@@ -629,7 +629,7 @@ void kgui_screen_settings_wave(bool run)
 
 /**
  * @brief The grab bar at the tab's foot: subtle, it says the tab can be taken
- *        from below (Luismi, 5-nov).
+ *        from below.
  * @param parent The settings screen.
  */
 static void handle_build(lv_obj_t *parent)

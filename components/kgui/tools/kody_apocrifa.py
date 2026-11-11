@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Kody's scenes, brought from the apocrifa (kode-dot-os, components/kody_anims), never drawn here.
+"""Kody's scenes, brought from the apocrifa (components/kody_anims), never drawn here.
 
-    tools/kody_apocrifa.py <kode-dot-os checkout> <kody checkout>
+    tools/kody_apocrifa.py <apocrifa checkout> <animations checkout>
 
 Writes, from the animations the apocrifa compiles:
 
@@ -14,7 +14,7 @@ Writes, from the animations the apocrifa compiles:
 
 <scene>_pk is the one file the apocrifa does not have, because it wakes on one press:
 the first press at Rest shows Kody's blue and face in colour with the rest of the scene
-still outlined (Luismi, 4-nov). It is the apocrifa's own propuestas/escenas/herramientas/
+still outlined. It is the apocrifa's own propuestas/escenas/herramientas/
 trazo.py run on <scene>_dormido, leaving the groups `postura` (face, ears, body) and `mano`
 (his hand, not what it holds) alone.
 The script first runs that same tool unchanged and exits if it does not give the
@@ -171,9 +171,9 @@ def main():
             a["help"] = f"From the apocrifa's kody_anims: {name}."
             animations.append(a)
         scenes.append({"name": s, "wake": f"despierta_{s}", "loop": loop, "on": {t: [n] for t, n in on.items()}})
-    # The roles outside the face: portatil is the apocrifa's, duda is approved in the kody repo
-    # and the apocrifa does not compile it. despide and cargando are still `borrador` in the
-    # kody repo's estados.json, which only Luismi promotes: they stay as they are.
+    # The roles outside the face: portatil is the apocrifa's, duda is approved in the
+    # animations and the apocrifa does not compile it. despide and cargando are still
+    # `borrador` in the animations' estados.json: they stay as they are.
     (assets / "kody_portatil.json").write_bytes(compiled(apo, "portatil") + b"\n")
     (assets / "kody_duda.json").write_bytes((kody / "AnimacionesKody/03-lottie/kody_duda.json").read_bytes())
     animations += list(keep_roles.values())
@@ -191,7 +191,7 @@ def main():
     for s, _, _ in SCENES:
         family = "502" if s == "reloj" else "288"
         row = {"sleep": f"{s}_duerme", "rest": None, "peek": None}
-        # Luismi, 5-nov: at the press he is already closing his eyes, without the stretch
+        # At the press he is already closing his eyes, without the stretch
         # that opens the animation (f0 to f26 of its 80), and quicker.
         duerme = json.loads(compiled(apo, f"{s}_duerme"))
         duerme["ip"] = (duerme["op"] * SLEEP_FROM_PCT) // 100
@@ -213,7 +213,7 @@ def main():
             blobs.append((name, zlib.compress(blob, 9), len(blob), frames, fps))
         table.append((s, row))
 
-    out = ["/* SPDX-License-Identifier: GPL-3.0-or-later */",
+    out = ["/* SPDX-License-Identifier: CC-BY-SA-4.0 */",
            "/* Written by tools/kody_apocrifa.py from the apocrifa's kody_anims: never by hand. */",
            '#include "kgui_kody_rest.h"', "", "#include <string.h>", ""]
     for name, z, json_len, frames, fps in blobs:

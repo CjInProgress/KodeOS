@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /**
  * @file kgui_sysscreen.c
- * @brief The system screen's frame (kgui_sysscreen.h); adapts kodediy/kode-dot-os, kshell_sysui.c.
+ * @brief The system screen's frame (kgui_sysscreen.h); adapts kshell's kshell_sysui.c.
  */
 #include "kgui_sysscreen.h"
 
@@ -290,7 +290,7 @@ void kgui_sys_message(kgui_sys_t *s, const char *text)
             sys_prot_off(s);
             lv_obj_update_layout(s->message);
             h = lv_obj_get_height(s->message);
-            /* In the room over the pill, well clear of it (Luismi, 5-nov). */
+            /* In the room over the pill, well clear of it. */
             lv_obj_set_y(s->message, (KGUI_SYS_PILL_Y - h) / 2);
         }
     }
@@ -331,7 +331,7 @@ void kgui_sys_figure(kgui_sys_t *s, uint8_t pct)
         (void)snprintf(digits, sizeof(digits), "%u", (unsigned)pct);
         sys_say(s->figure, digits);
         /* The figure alone is centred, and the "%" stands beside it: with it
-         * in the centring the number would sit off the middle (Luismi, 5-nov). */
+         * in the centring the number would sit off the middle. */
         {
             lv_point_t said;
 

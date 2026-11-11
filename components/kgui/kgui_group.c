@@ -31,16 +31,14 @@ typedef struct {
 
 /*
  * The folders, in the order of the root: All, which holds every app, the
- * marketplace's seven
- * (kodediy/ecosystem, packages/types/src/app-categories.ts), then the twelve
- * the launcher design of 5-nov-2026 drew for what a Dot is for, and Time
- * (kode-dot-os, informes/2026-11-05-lanzador/DISENO.md). kgui knows the
+ * marketplace's seven, then the twelve the launcher design drew for what a
+ * Dot is for, and Time. kgui knows the
  * thirteen new words whenever an app's category says them, before the
  * marketplace takes them. The names come from here and never from a rule, so
  * no folder is given a plural nobody wrote (`ai` is AI, not Ais). Every folder
  * wears the same Medium Grey disc, the apocrifa's disc of an app with no art:
  * a folder is told by its drawing and its name, in Soft Black with a touch of
- * Bold Yellow (kgui_folder_art(), Luismi, 5-nov, over decision 0040). A word
+ * Bold Yellow (kgui_folder_art()). A word
  * that is not here has no drawing and its disc wears its letters
  * (kgui_group_mono()).
  */

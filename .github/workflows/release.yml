@@ -166,8 +166,8 @@ jobs:
           docker image rm espressif/idf:v6.0.2 || true
           df -h /
 
-      # The welcome app is private and so is the SDK it pins (v00.00.29, in
-      # kode-sdk-history), so each has its own read-only deploy key. The app's
+      # The welcome app is private and so is the SDK it pins (v00.00.29), so
+      # each has its own read-only deploy key. The app's
       # source is cloned here on the runner; the SDK's key is staged in
       # .ci-ssh/ for the component manager inside the build container.
       - name: Fetch the welcome app's source
@@ -199,7 +199,7 @@ jobs:
           target: esp32p4
           # kodeOS pins the public SDK over HTTPS and needs no key. The
           # welcome app pins the SDK by its old SSH address, which the git
-          # rewrite sends to kode-sdk-history. The key is copied out of the
+          # rewrite sends to the private copy of that SDK. The key is copied out of the
           # workspace before use: ssh refuses a private key whose owner is not
           # the user running it, and the workspace files belong to the runner
           # while this container is its own user. IdentityAgent=none because

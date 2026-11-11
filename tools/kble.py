@@ -55,6 +55,15 @@ from the name CoreBluetooth caches per address), and a bridge already holding
 a different board is refused instead of served. Without either, the first
 Kode is taken, as before.
 
+The serial is only on the air while the board has no Bluetooth name of its
+own. Once Settings gives it one the scan response carries `KODE <name>`
+instead, and the advert holds the console's UUID and nothing else that
+names the board, so a renamed board is asked for by that name:
+`--name "KODE qa one"`. The match is the whole name, whatever its case and
+whatever blanks it holds or ends with. `--serial` is the same match, so a
+serial that no advert carries answers with the names that do advertise the
+console. Nothing connects to a board to read its serial.
+
 macOS needs one piece of scaffolding and it is worth explaining, because the
 failure is otherwise baffling. CoreBluetooth refuses any process whose
 Info.plist has no NSBluetoothAlwaysUsageDescription, and it refuses it by
@@ -117,6 +126,9 @@ CHUNK = 4096          # what the board asks for in `>|ready chunk=`
 # `kble <version> ok|busy|stale` back. Bump it when the wire changes.
 HELLO_VERSION = 2
 
+# Where the name of a board a bridge already holds begins, in what it says.
+HELD_MARK = ") board="
+
 # The environment variable that names the board when --serial is not given.
 SERIAL_ENV = "KODE_SERIAL"
 
@@ -137,13 +149,36 @@ def die(msg):
     sys.exit(f"kble: {msg}")
 
 
-def norm_serial(text):
-    """A serial as the advert spells it: upper case, no surrounding blanks.
-    None when nothing was asked for."""
+def norm_board(text):
+    """A serial or a name as an advert is compared: upper case, no surrounding
+    blanks. None when nothing was asked for."""
     if text is None:
         return None
     text = text.strip().upper()
     return text or None
+
+
+def wanted_board(serial, name, env_serial):
+    """The board to look for, as (serial, name), one of them None unless
+    nothing was asked for. A name given beats KODE_SERIAL, which is only a
+    default; two things given on the command line name the board twice."""
+    if serial is not None and name is not None:
+        die("--serial and --name both name the board: give one")
+    if name is not None:
+        return None, name.strip() or None
+    return norm_board(serial or env_serial), None
+
+
+def settled(line):
+    """Whether a line from the bridge says how the attach ended. The `found`
+    line is not one: it carries the board's name, and a name can hold any
+    word."""
+    text = line.lstrip("\x00")
+    if text.startswith("kble: "):
+        text = text[len("kble: "):]
+    if text.startswith("found "):
+        return False
+    return "attached" in text or "no board" in text or "failed" in text
 
 
 def advert_name(dev, ad):
@@ -155,50 +190,76 @@ def advert_name(dev, ad):
 
 def board_of(lines):
     """The board a bridge reported, from the lines it said while attaching:
-    `found NAME (addr)` on a fresh scan, `board=NAME` on a held link.
+    `found NAME (addr)` on a fresh scan, `board=NAME` at the end of the line
+    on a held link. The name is whole, blanks and all: it is what is between
+    `found ` and the last ` (`, or after the first `) board=`.
     None when it did not say (a bridge that predates the name)."""
     name = None
     for line in lines:
         line = line.lstrip("\x00")
         if line.startswith("kble: "):
             line = line[len("kble: "):]
+        held = line.partition(HELD_MARK)
         if line.startswith("found "):
-            name = line.split()[1]
-        for word in line.split():
-            if word.startswith("board="):
-                name = word[len("board="):]
+            name = line[len("found "):].rsplit(" (", 1)[0]
+        elif held[1]:
+            name = held[2]
     return name
 
 
-def wrong_board(lines, serial):
+def wrong_board(lines, want):
     """Why this command must not use the link it was given, or None.
 
-    The scan only ever finds `serial`, so a mismatch can only be a bridge that
-    was already holding another board (or one too old to say which)."""
-    if serial is None:
+    The scan only ever finds `want`, a serial or a name as norm_board() keeps
+    it, so a mismatch can only be a bridge that was already holding another
+    board (or one too old to say which)."""
+    if want is None:
         return None
     held = board_of(lines)
     if held is None:
-        return (f"the bridge did not say which board it holds, and {serial} "
+        return (f"the bridge did not say which board it holds, and {want} "
                 "was asked for: `kble.py detach` and try again")
-    if held.upper() != serial:
-        return (f"the bridge holds {held}, not {serial}: `kble.py detach` "
+    if norm_board(held) != want:
+        return (f"the bridge holds {held}, not {want}: `kble.py detach` "
                 "first")
     return None
 
 
-def serial_args(serial):
+def board_args(serial, name):
     """The bridge's command line for the board it is to look for. The bundle
     is started by launchd and inherits no environment, so it goes as an
     argument."""
-    if serial is None:
-        return []
-    return ["--serial", serial]
+    if serial is not None:
+        return ["--serial", serial]
+    if name is not None:
+        return ["--name", name]
+    return []
+
+
+def no_board_say(serial, name, seen):
+    """What the bridge says when the scan ended without the board asked for.
+    `seen` is the name of every advert that carries the console service,
+    in the order they were heard."""
+    if (serial is None) and (name is None):
+        return ("no board is advertising the console service - run `ble_up` "
+                "on the cable, or check nothing else is already attached")
+    if not seen:
+        who = serial if name is None else f"named {name}"
+        return (f"no board {who} is advertising the console service - run "
+                "`ble_up` on the cable, or check nothing else is already "
+                "attached")
+    heard = ", ".join(f'"{n}"' if n else "(no name)" for n in seen)
+    if name is not None:
+        return (f"no board advertises the name {name}: the console service "
+                f"is advertised by {heard}")
+    return (f"no board advertises the serial {serial}: the console service "
+            f"is advertised by {heard} - a board with a Bluetooth name of "
+            "its own does not show its serial, ask for it with --name")
 
 
 # ---- Getting a Python that can actually open a radio -----------------------
 
-def launch_bridge(timeout, serial=None):
+def launch_bridge(timeout, serial=None, name=None):
     """Start the half that holds the link, detached from this command.
 
     The macOS scaffolding this needs - a venv with bleak in it, and a signed
@@ -234,13 +295,13 @@ def launch_bridge(timeout, serial=None):
             py=py, script_src=os.path.abspath(__file__),
             script_copy=BRIDGE_COPY, log_path=LOG)
         kblebundle.launch(APP, ["--hold", "--timeout", str(timeout)]
-                          + serial_args(serial))
+                          + board_args(serial, name))
     else:
         os.makedirs(CACHE, exist_ok=True)
         with open(LOG, "ab") as log:
             subprocess.Popen([py, os.path.abspath(__file__),
                               "--hold", "--timeout", str(timeout)]
-                             + serial_args(serial),
+                             + board_args(serial, name),
                              stdout=log, stderr=log, start_new_session=True)
 
 
@@ -255,8 +316,10 @@ class BleakRadio:
     from them without a lock.
     """
 
-    def __init__(self, serial=None):
-        self.serial = norm_serial(serial)
+    def __init__(self, serial=None, name=None):
+        self.serial = norm_board(serial)
+        self.name = None if name is None else (name.strip() or None)
+        self.want = norm_board(self.name or self.serial)
         self.board = None
         self.client = None
         self.window = 20
@@ -278,18 +341,15 @@ class BleakRadio:
                 return False
             name = advert_name(d, ad)
             names[d.address] = name
-            return (self.serial is None) or (name.upper() == self.serial)
+            return (self.want is None) or (norm_board(name) == self.want)
 
         dev = await BleakScanner.find_device_by_filter(wanted, timeout=timeout)
         if dev is None:
-            if self.serial is None:
-                say("no board is advertising the console service - "
-                    "run `ble_up` on the cable, or check nothing else is "
-                    "already attached")
-            else:
-                say(f"no board {self.serial} is advertising the console "
-                    "service - run `ble_up` on the cable, or check nothing "
-                    "else is already attached")
+            seen = []
+            for n in names.values():
+                if n not in seen:
+                    seen.append(n)
+            say(no_board_say(self.serial, self.name, seen))
             return False
         self.board = names.get(dev.address) or dev.name or "?"
         say(f"found {self.board} ({dev.address})")
@@ -486,10 +546,11 @@ async def hold(sock_path, radio, timeout, version=HELLO_VERSION):
 class Link:
     """The board, reached through the bridge. Lines in, lines out."""
 
-    def __init__(self, timeout, sock_path=SOCK, launch=None, serial=None):
+    def __init__(self, timeout, sock_path=SOCK, launch=None, serial=None,
+                 name=None):
         self.timeout = timeout
         self.sock_path = sock_path
-        self.launch = launch or (lambda: launch_bridge(timeout, serial))
+        self.launch = launch or (lambda: launch_bridge(timeout, serial, name))
         self.sock = None
         self.buf = ""
         self.lines = []
@@ -911,8 +972,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--hold", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--serial", metavar="KODE...",
-                    help=f"attach only to this board (default: ${SERIAL_ENV}, "
-                         "else the first Kode scanned)")
+                    help=f"attach only to the board advertising this serial "
+                         f"(default: ${SERIAL_ENV}, else the first Kode "
+                         "scanned). A board with a Bluetooth name of its own "
+                         "does not advertise its serial: use --name")
+    ap.add_argument("--name", metavar="NAME",
+                    help="attach only to the board advertising this "
+                         'Bluetooth name, as in --name "KODE qa one": the '
+                         "whole name, any case")
     ap.add_argument("--timeout", type=float, default=25.0,
                     metavar="S", help="how long to look for the board "
                                       "(the first command only)")
@@ -969,7 +1036,8 @@ def main():
     args = ap.parse_args()
 
     if args.hold:                        # we are the half inside the bundle
-        why = asyncio.run(hold(SOCK, BleakRadio(args.serial), args.timeout))
+        why = asyncio.run(hold(SOCK, BleakRadio(args.serial, args.name),
+                               args.timeout))
         print(f"bridge: {why}")           # into bridge.log
         return 0
 
@@ -984,18 +1052,17 @@ def main():
         ap.print_help()
         return 2
 
-    serial = norm_serial(args.serial or os.environ.get(SERIAL_ENV))
-    link = Link(args.timeout, serial=serial)
+    serial, name = wanted_board(args.serial, args.name,
+                                os.environ.get(SERIAL_ENV))
+    link = Link(args.timeout, serial=serial, name=name)
     link.start()
     # Let the bridge say whether it has the board before a command goes out.
-    got, _ = link.wait_for(
-        lambda l: "attached" in l or "no board" in l or "failed" in l,
-        args.timeout + 10.0)
+    got, _ = link.wait_for(settled, args.timeout + 10.0)
     for l in got:
         show(l)
     why = None
     if any(l.lstrip("\x00").startswith("kble: attached") for l in got):
-        why = wrong_board(got, serial)
+        why = wrong_board(got, norm_board(name or serial))
     if why is not None:
         link.close()
         die(why)

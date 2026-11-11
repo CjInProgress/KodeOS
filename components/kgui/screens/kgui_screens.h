@@ -40,7 +40,7 @@ extern "C" {
 #define KGUI_EMPTY_HINT_GAP 6
 /** What the title says while the lists have not both answered. */
 #define KGUI_EMPTY_WAIT_TEXT "Looking for apps"
-/** A control-centre circle's diameter: larger than kshell's 88 (Luismi, 5-nov). */
+/** A control-centre circle's diameter: larger than kshell's 88. */
 #define KGUI_CC_CIRCLE       100
 /** The three columns of circles: the left edge of each. */
 #define KGUI_CC_X0           35
@@ -49,7 +49,7 @@ extern "C" {
 /**
  * The first row of circles: Wi-Fi, Bluetooth and More. The block is centred on
  * the glass: its rows 16 px apart, 44 px over it and 42 under it, and the circles
- * 20 px apart (Luismi, 5-nov).
+ * 20 px apart.
  */
 #define KGUI_CC_Y0           44
 /** The second row: the battery's liquid under Wi-Fi, Turn off under More. */
@@ -76,7 +76,7 @@ extern "C" {
 /** The least brightness the level sets (kshell's BRIGHT_MIN), in percent. */
 #define KGUI_CC_LEVEL_MIN_PCT 10U
 /** The glyph's distance from the level's left edge. */
-#define KGUI_CC_LEVEL_GLYPH_PX 52   /**< A level's glyph (Luismi, 5-nov: larger). */
+#define KGUI_CC_LEVEL_GLYPH_PX 52   /**< A level's glyph (larger). */
 #define KGUI_CC_LEVEL_GLYPH_X 16
 /** The fill is wide enough for the figure inside it from this width. */
 #define KGUI_CC_LEVEL_INSIDE  160
@@ -87,9 +87,9 @@ extern "C" {
 #define KGUI_CC_SUN_STEPS     4
 /** The share of the disc's area a full cell fills: its surface always shows, or there is nothing to lean. */
 #define KGUI_CC_LIQUID_FULL   0.97F
-/** The liquid's opacity over the circle's off grey: Ok green this far in reads as a deep, quiet green (Luismi, 4-nov). */
+/** The liquid's opacity over the circle's off grey: Ok green this far in reads as a deep, quiet green. */
 #define KGUI_CC_LIQUID_OPA    LV_OPA_30
-/** Whether the battery's circle draws a liquid at all: yes, a quiet one behind the figure, leaning with the Dot (Luismi, 5-nov). */
+/** Whether the battery's circle draws a liquid at all: yes, a quiet one behind the figure, leaning with the Dot. */
 #define KGUI_CC_LIQUID_SHOWN  1
 /** The level in percent: all of it, and one more than that for the sun's step. */
 #define KGUI_CC_LEVEL_FULL    100
@@ -427,7 +427,7 @@ void kgui_screen_face_knock_say(const char *last);
  * @brief Take the face's content home from where Rest left it, as a movement.
  *
  * Rest moves the content up to 4 px to save the panel; going home at once is
- * the jump Luismi saw between the sleeping Kody and the waking one. It goes
+ * the jump seen between the sleeping Kody and the waking one. It goes
  * while Kody himself leaps instead. kgui_screen_face_shift() cancels it.
  *
  * @param delay_ms How long it stands still first.

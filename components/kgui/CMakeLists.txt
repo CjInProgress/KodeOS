@@ -38,6 +38,7 @@ idf_component_register(
          "kgui_scene_label.c"
          "kgui_shelf.c"
          "kgui_tilt.c"
+         "kgui_trim.c"
          "kgui_welcome.c"
          "kgui_welcome_ring.c"
          "kgui_wface.c"

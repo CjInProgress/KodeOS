@@ -24,7 +24,7 @@ LV_FONT_DECLARE(kgui_font_figure_128);
 
 #define KGUI_SYS_GLASS_H      502   /**< The glass's height. */
 #define KGUI_SYS_CENTRE_X     205   /**< The glass's middle, across. */
-#define KGUI_SYS_GLYPH_MID_RISE 40  /**< A large glyph as the whole message stands this far above the glass's middle (Luismi, 5-nov). */
+#define KGUI_SYS_GLYPH_MID_RISE 40  /**< A large glyph as the whole message stands this far above the glass's middle. */
 #define KGUI_SYS_PROT_Y       104   /**< The protagonist's middle, down. */
 #define KGUI_SYS_DISC         104    /**< An app's disc. */
 #define KGUI_SYS_GLYPH        96    /**< A glyph, scaled to this side. */
@@ -96,7 +96,7 @@ bool kgui_sys_create(kgui_sys_t *s, lv_obj_t *card);
 /**
  * @brief Say one message as the whole card: Outfit ExtraBold 40, centred
  *        across the glass and in the room above the answer pill, with no
- *        protagonist (Luismi, 4-nov). NULL takes it away.
+ *        protagonist. NULL takes it away.
  *
  * @param s    The frame.
  * @param text The words; up to three lines, wrapped.

@@ -13,9 +13,8 @@ format of the kit's line glyphs, so a screen recolours them as it draws them
 in the kit because the SDK is not kgui's to change; the names are kgui's
 (kgui_glyph_<name>_40) so a later kit glyph of the same name does not clash.
 
-The twelve bodies are the launcher design's of 5-nov-2026 (kode-dot-os,
-informes/2026-11-05-lanzador/DISENO.md, render/glifos.py); `clock` is the
-kit's, which the kit draws at 30 only.
+The twelve bodies are the launcher design's; `clock` is the kit's, which the
+kit draws at 30 only.
 
 Needs cairosvg, Pillow, pypng and lz4. cairosvg loads libcairo by name: on
 macOS with Homebrew's cairo, run it with an interpreter that keeps DYLD_*
