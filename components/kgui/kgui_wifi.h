@@ -32,6 +32,21 @@ typedef struct {
 const char *kgui_radio_words(kgui_radio_view_t const *v);
 
 /**
+ * @brief The line under Pair new device on the Bluetooth page.
+ *
+ * The board has one link: with a device on it nothing is on the air, so the
+ * row never says "visible" then, whatever was asked.
+ *
+ * @param open   The time to pair is running.
+ * @param wait   It was asked with a device connected and starts when that
+ *               one leaves.
+ * @param linked A device is connected now.
+ * @return "Visible to new devices", "When the other leaves", or NULL
+ *         for no line.
+ */
+const char *kgui_ble_pair_words(bool open, bool wait, bool linked);
+
+/**
  * @brief Why a join failed, in the hint's words.
  * @param fail kdrv_wifi_fail_t, as WifiStateEvt carries it.
  * @return "Wrong password", "Network not found", or "Could not join".

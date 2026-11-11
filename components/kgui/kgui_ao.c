@@ -2849,6 +2849,9 @@ typedef struct {
     bool     adv_on;         /**< The board is on the air and can be found:
                                *   advertising, and not hidden.            */
     bool     ble_pair_open;  /**< Pair new device's time is running.        */
+    bool     ble_pair_wait;  /**< It was asked with a device connected and
+                              *   starts when that one leaves.              */
+    bool     ble_linked;     /**< A device is connected: nothing is on the air. */
     bool     ble_console;    /**< A central is attached to the console.     */
     uint8_t  ble_bonds;      /**< Bonded peers in the store. A COUNT is all
                                *   the radio exposes - no names, no
@@ -23561,15 +23564,14 @@ static void gui_ble_fill(Gui * const me)
 
     /* With a device bonded the board hides from everyone else and takes no
      * new one: this shows it for five minutes, so another can pair. While
-     * that time runs the row says so; it ends early when a device pairs. */
+     * that time runs the row says so; it ends early when a device pairs.
+     * With a device connected nothing is on the air, and the row says when
+     * the board will show itself instead (kgui_ble_pair_words()). */
     if ( 0U < me->ble_bonds )
     {
-        const char *sub = NULL;
+        const char * const sub = kgui_ble_pair_words(me->ble_pair_open, me->ble_pair_wait,
+                                                     me->ble_linked);
 
-        if ( me->ble_pair_open )
-        {
-            sub = "Visible to new devices";
-        }
         if ( gui_sheet_row_plain(me, "Pair new device", sub,
                                 gui_action_ground(GUI_ACT_SECONDARY)) != NULL )
         {
@@ -23622,9 +23624,9 @@ static void gui_ble_act(Gui * const me, uint16_t tag)
     }
     else if ( (uint16_t)GUI_TAG_BLE_PAIR == tag )
     {
-        /* AO_Radio answers with BLE_STATE_SIG, and its pair_open is what
-         * puts the row's line up. */
-        KLOG_I(TAG, "pair new device: the board is visible");
+        /* AO_Radio answers with BLE_STATE_SIG, and what it says there is
+         * what puts the row's line up. */
+        KLOG_I(TAG, "pair new device: asked");
         ble_pair_open_request();
     }
     else if ( (uint16_t)GUI_TAG_BLE_FORGET == tag )
@@ -34552,16 +34554,21 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                     on = me->ble_on;
                 }
             }
+            bool const linked = ((uint8_t)KDRV_BLE_CONNECTED == b->state);
             bool const same = (on == me->ble_on) && (adv == me->adv_on)
                               && (b->console == me->ble_console)
                               && (b->bonds == me->ble_bonds)
-                              && (b->pair_open == me->ble_pair_open);
+                              && (b->pair_open == me->ble_pair_open)
+                              && (b->pair_wait == me->ble_pair_wait)
+                              && (linked == me->ble_linked);
 
             me->ble_on        = on;
             me->adv_on        = adv;
             me->ble_console   = b->console;
             me->ble_bonds     = b->bonds;
             me->ble_pair_open = b->pair_open;
+            me->ble_pair_wait = b->pair_wait;
+            me->ble_linked    = linked;
             /* The circle answers the switch and nothing else: advertising and
              * an attached central are traffic, not a switch, and they belong
              * to the Bluetooth sheet. The one exception is the blink, and
