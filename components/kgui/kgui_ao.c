@@ -72,6 +72,7 @@
 #include "kgui_return.h"   /* the first frame after an app, and how long it waits for the list */
 #include "kgui_welcome.h"  /* the landing on the face after Welcome */
 #include "kgui_wifi.h"     /* the radios' rows' words, and why a join failed */
+#include "kgui_trim.h"     /* a typed name without the spaces at its ends */
 #include "kgui_syscard.h"  /* the words of the stopped, critical and factory reset cards, and their decisions */
 #include "kgui_sysscreen.h" /* the frame of a system screen: protagonist, figure, words, pill */
 #if CONFIG_KODE_TEST_DOT
@@ -23434,28 +23435,26 @@ static void gui_ble_name_send(Gui const * const me)
 
 /**
  * @brief Take what was typed as the name Bluetooth shows: the apps look for the
- *        prefix, so it is always there. Nothing typed goes back to the serial.
+ *        prefix, so it is always there. Nothing typed, or only spaces, goes
+ *        back to the serial.
+ *
+ * The spaces at either end of the words are not part of the name.
  *
  * @param me    The AO.
  * @param typed The words.
  */
 static void gui_ble_name_set(Gui * const me, const char *typed)
 {
-    size_t skip = 0U;
+    char words[GUI_BLE_TYPED_MAX + 1U];
 
-    while ( ' ' == typed[skip] )
-    {
-        ++skip;
-    }
-    if ( '\0' == typed[skip] )
+    if ( 0U == kgui_trim_spaces(typed, words, sizeof(words)) )
     {
         me->ble_name[0] = '\0';
         (void)khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME);
     }
     else
     {
-        (void)snprintf(me->ble_name, sizeof(me->ble_name), "%s%.*s", GUI_BLE_PREFIX,
-                       (int)GUI_BLE_TYPED_MAX, &typed[skip]);
+        (void)snprintf(me->ble_name, sizeof(me->ble_name), "%s%s", GUI_BLE_PREFIX, words);
         (void)khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME, me->ble_name);
     }
     KLOG_N(TAG, "bluetooth name: '%s'", ('\0' != me->ble_name[0]) ? me->ble_name : "the serial");
