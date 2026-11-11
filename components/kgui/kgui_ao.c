@@ -2897,6 +2897,7 @@ typedef struct {
     kgui_haptic_level_t haptic_pref; /**< What the Vibration row chose; the volume's stops may ask otherwise. */
     char     ble_name[GUI_BLE_NAME_MAX + 1U]; /**< The name chosen for Bluetooth; empty for the serial. */
     bool     first_hold;     /**< The glass stays black: the first thing lit is whole. */
+    bool     disp_row;       /**< The `display` row has the glass: no pass draws. */
     uint32_t first_hold_ms;  /**< Since when. */
     bool     rest_hint;      /**< Rest says how to wake: any input but the top button. */
     uint32_t rest_hint_ms;   /**< When it started saying so. */
@@ -33248,7 +33249,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             uint32_t next = KODE_GUI_TICK_MS;
 
             gui_first_hold_tick(me);
-            if ( (!kgui_return_holds(&me->back)) && (!me->first_hold) )
+            if ( (!kgui_return_holds(&me->back)) && (!me->first_hold) && (!me->disp_row) )
             {
                 uint32_t const flushes = me->flushes;
                 uint32_t const t0      = gui_now_us();
@@ -33814,10 +33815,14 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
         case DISPLAY_TEST_SIG: {
             /* And the `display` row, answered on the same two buttons. There
              * is no line to write - AO_Display drops every flush while the
-             * row has the glass - so the state is taken for the pad alone. */
+             * row has the glass - so the state is taken for the pad alone.
+             * No pass draws until the row ends: LVGL draws straight into the
+             * panel's framebuffers, and a dropped flush has already drawn
+             * Kody's wheel into the one on the glass. */
             if ( DISPLAY_TEST_ASK == Q_EVT_CAST(DisplayTestEvt)->phase )
             {
                 gui_test_take(me);
+                me->disp_row = true;
                 status = Q_TRAN(&Gui_btn_test);
             }
             else
@@ -37316,7 +37321,8 @@ static QState Gui_btn_test(Gui * const me, QEvt const * const e)
     switch ( e->sig )
     {
         case Q_EXIT_SIG: {
-            me->screen = NULL;
+            me->screen   = NULL;
+            me->disp_row = false;
             status = Q_HANDLED();
             break;
         }
@@ -37370,6 +37376,8 @@ static QState Gui_btn_test(Gui * const me, QEvt const * const e)
             }
             else
             {
+                /* The row may follow another on this screen. */
+                me->disp_row = true;
                 status = Q_HANDLED();
             }
             break;
@@ -37933,6 +37941,11 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
 
     switch ( e->sig )
     {
+        case Q_EXIT_SIG: {
+            me->disp_row = false;
+            status = Q_HANDLED();
+            break;
+        }
         case Q_ENTRY_SIG: {
             s_gui_state = "selftest";
             me->bot_hold = false;
@@ -38014,7 +38027,16 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
         }
         case DISPLAY_TEST_SIG: {
             /* Nothing to write: AO_Display drops every flush while its row
-             * has the glass, and the colour on it is the question. */
+             * has the glass, and the colour on it is the question. No pass
+             * draws until the row ends (see Gui_running). */
+            if ( DISPLAY_TEST_DONE == Q_EVT_CAST(DisplayTestEvt)->phase )
+            {
+                me->disp_row = false;
+            }
+            else
+            {
+                me->disp_row = true;
+            }
             status = Q_HANDLED();
             break;
         }
