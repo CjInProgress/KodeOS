@@ -15475,9 +15475,9 @@ static void gui_show_test_step(const ButtonsTestEvt *t)
  * button means what, because the pad is the answer and this is the only
  * place on the unit that can say so.
  *
- * The `display` row has no twin of this: AO_Display drops every flush while
- * that row owns the glass, so nothing written here would be seen. The glass
- * carries the colour and the console carries the question.
+ * The `display` row has its line once, before its first field
+ * (gui_show_display_intro()): from then on AO_Display drops every flush, the
+ * glass carries the colour and the console carries the question.
  *
  * @param t The step AO_LedMgr is reporting.
  */
@@ -15512,6 +15512,19 @@ static void gui_show_led_step(const LedTestEvt *t)
     }
     line[GUI_LOADING_LINE_MAX] = '\0';
     lv_subject_set_string(kgui_subject_loading_text, line);
+}
+
+/**
+ * @brief Say what the `display` row's fields will ask, before the first.
+ *
+ * The fields carry no words and the glass is AO_Display's while they are up,
+ * so this is said once, on the screen the row opens on (DISPLAY_TEST_INTRO).
+ * TOP starts the fields; left alone they start by themselves.
+ */
+static void gui_show_display_intro(void)
+{
+    lv_subject_set_string(kgui_subject_loading_text,
+                          "Five colours next\nEven? TOP yes - BOT no");
 }
 
 /**
@@ -33811,13 +33824,20 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
         case DISPLAY_TEST_SIG: {
-            /* And the `display` row, answered on the same two buttons. There
-             * is no line to write - AO_Display drops every flush while the
-             * row has the glass - so the state is taken for the pad alone.
-             * No pass draws until the row ends: LVGL draws straight into the
-             * panel's framebuffers, and a dropped flush has already drawn
-             * Kody's wheel into the one on the glass. */
-            if ( DISPLAY_TEST_ASK == Q_EVT_CAST(DisplayTestEvt)->phase )
+            /* And the `display` row, answered on the same two buttons. It
+             * opens with the glass still ours, for the line that says what
+             * the fields will ask. From its first question no pass draws
+             * until the row ends: AO_Display drops every flush, LVGL draws
+             * straight into the panel's framebuffers, and a dropped flush
+             * has already drawn Kody's wheel into the one on the glass. */
+            uint8_t const phase = Q_EVT_CAST(DisplayTestEvt)->phase;
+            if ( DISPLAY_TEST_INTRO == phase )
+            {
+                gui_show_display_intro();
+                gui_test_take(me);
+                status = Q_TRAN(&Gui_btn_test);
+            }
+            else if ( DISPLAY_TEST_ASK == phase )
             {
                 gui_test_take(me);
                 me->disp_row = true;
@@ -37367,9 +37387,14 @@ static QState Gui_btn_test(Gui * const me, QEvt const * const e)
             {
                 status = Q_TRAN(gui_test_home(me));
             }
-            else
+            else if ( DISPLAY_TEST_INTRO == phase )
             {
                 /* The row may follow another on this screen. */
+                gui_show_display_intro();
+                status = Q_HANDLED();
+            }
+            else
+            {
                 me->disp_row = true;
                 status = Q_HANDLED();
             }
@@ -38019,10 +38044,15 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
             break;
         }
         case DISPLAY_TEST_SIG: {
-            /* Nothing to write: AO_Display drops every flush while its row
-             * has the glass, and the colour on it is the question. No pass
+            /* The line goes up on the opening screen; from the first
+             * question the colour on the glass is the question, and no pass
              * draws until the row ends (see Gui_running). */
-            if ( DISPLAY_TEST_DONE == Q_EVT_CAST(DisplayTestEvt)->phase )
+            uint8_t const phase = Q_EVT_CAST(DisplayTestEvt)->phase;
+            if ( DISPLAY_TEST_INTRO == phase )
+            {
+                gui_show_display_intro();
+            }
+            else if ( DISPLAY_TEST_DONE == phase )
             {
                 me->disp_row = false;
             }
