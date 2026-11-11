@@ -18,7 +18,7 @@ extern "C" {
 
 #define KGUI_RISE_PERIOD_MS  90U    /**< The spring's period: kshell's KS_T_PAGE rise, d = 0.09 s, b = 0. Tunable. */
 #define KGUI_RISE_FALL_MS    80U    /**< How long a system card takes to go: kshell's KS_T_BACK fall. */
-#define KGUI_RISE_INPUT_MS   700U   /**< How long a risen card ignores input, from the moment it began to rise. */
+#define KGUI_RISE_INPUT_MS   300U   /**< How long a risen card ignores input, from the moment it began to rise: past the rise and a person's reaction to it, so a touch already on its way answers nothing and the first deliberate tap does. */
 
 /** @brief One rising card. */
 typedef struct {

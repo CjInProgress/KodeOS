@@ -45,11 +45,10 @@ const char *kgui_stopped_reason(int end);
 /* ---- The battery ----------------------------------------------------------- */
 
 #define KGUI_BAT_CRIT_PCT        10U  /**< At or under this charge, and not charging, the battery is critical. */
-#define KGUI_BAT_CRIT_REARM_PCT  3U   /**< The card rises again only after the charge climbs this far above critical, or the cable charges. */
+#define KGUI_BAT_CRIT_REARM_PCT  3U   /**< The card rises again only after the charge climbs this far above critical, or the cable goes in. */
 #define KGUI_CRIT_TITLE          "Battery"            /**< The critical card's title. */
 #define KGUI_CRIT_SUB            "Critical"           /**< ...and what is under it. */
-#define KGUI_CRIT_PLUG           "Plug in the cable." /**< Its line, while the cable is out. */
-#define KGUI_CRIT_PLUGGED        "The cable is in."   /**< ...and while it is in. */
+#define KGUI_CRIT_PLUG           "Plug in the cable." /**< Its line: what it asks for. */
 
 /** @brief Whether the critical card has been raised for this entry into critical. */
 typedef struct {
@@ -62,8 +61,10 @@ typedef struct {
  *
  * Once per entry: a reading that stays critical is due only the first time,
  * and a charge that wobbles around the line is not a new entry. The latch
- * opens again when the cell charges, or climbs KGUI_BAT_CRIT_REARM_PCT above
- * the line.
+ * opens again when the cable goes in, or the charge climbs
+ * KGUI_BAT_CRIT_REARM_PCT above the line.
+ *
+ * Never due while the cable is in: the card asks for the cable.
  *
  * Nothing is due until a reading above 0 % has been seen. A board whose gauge
  * reads no cell says 0 % on every reading, and nothing in a reading says the
@@ -72,11 +73,11 @@ typedef struct {
  * @param c        The latch.
  * @param critical Whether this reading is critical: not charging and at or
  *                 under KGUI_BAT_CRIT_PCT.
- * @param charging Whether the cell is charging.
+ * @param cable    Whether the cable is in.
  * @param soc_pct  The charge, in percent.
  * @return true when the card is due. Call kgui_crit_taken() once it is raised.
  */
-bool kgui_crit_due(kgui_crit_t *c, bool critical, bool charging, uint8_t soc_pct);
+bool kgui_crit_due(kgui_crit_t *c, bool critical, bool cable, uint8_t soc_pct);
 
 /**
  * @brief The card was raised: it is not due again until the battery recovers.

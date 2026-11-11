@@ -9,11 +9,19 @@ testing the host's copy against the spec's own example and its own limits.
 under tools/ needs a fixture image checked in - Pillow is the one dependency
 that buys, and only this file and kappdata.py itself ever import it.
 
+`load`, `write`, `read` and `digest` are the folder itself: an app's
+`appdata/` turned into the two files the board stores, the same bytes whether
+the cable, the factory's FAT image or a release carries them.
+
     python3 tools/tests/test_kappdata.py
 """
 
+import hashlib
+import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -166,6 +174,195 @@ class FolderTests(unittest.TestCase):
     def test_folder_path(self):
         self.assertEqual(kappdata.folder("Scope"),
                          "/storage/.kode/appsdata/Scope")
+
+
+ICON = bytes(range(256)) * (kappdata.K64_BYTES // 256)
+
+
+class PackageCase(unittest.TestCase):
+    """A scratch directory, and an app's `appdata/` folder written into it."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(_rmtree, self.tmp)
+
+    def source(self, obj=None, files=None):
+        src = os.path.join(self.tmp, "appdata")
+        os.makedirs(src, exist_ok=True)
+        if obj is not None:
+            with open(os.path.join(src, "app.json"), "w") as fh:
+                json.dump(obj, fh, indent=2)
+        for name, body in (files or {}).items():
+            with open(os.path.join(src, name), "wb") as fh:
+                fh.write(body)
+        return src
+
+    def board_folder(self, files):
+        out = os.path.join(self.tmp, "board")
+        os.makedirs(out, exist_ok=True)
+        for name, body in files.items():
+            with open(os.path.join(out, name), "wb") as fh:
+                fh.write(body)
+        return out
+
+
+class LoadTests(PackageCase):
+    """load() turns an app's appdata/ folder into the two files the board stores."""
+
+    def test_app_json_is_written_compact(self):
+        src = self.source({"kode": "1", "description": "A test app", "color": "#112233"})
+        body, icon = kappdata.load(src)
+        self.assertEqual(body, b'{"kode":"1","description":"A test app","color":"#112233"}')
+        self.assertEqual(icon, b"")
+
+    def test_an_icon_found_is_named_icon_k64(self):
+        src = self.source({"kode": "1", "icon": "art/mine.k64"}, {"icon.k64": ICON})
+        os.mkdir(os.path.join(src, "art"))
+        os.rename(os.path.join(src, "icon.k64"), os.path.join(src, "art", "mine.k64"))
+        body, icon = kappdata.load(src)
+        self.assertEqual(json.loads(body)["icon"], "icon.k64")
+        self.assertEqual(icon, ICON)
+
+    def test_icon_png_is_converted_without_being_named(self):
+        from PIL import Image
+        src = self.source({"kode": "1"})
+        Image.new("RGBA", (128, 128), (0, 0, 255, 255)).save(os.path.join(src, "icon.png"))
+        body, icon = kappdata.load(src)
+        self.assertEqual(json.loads(body)["icon"], "icon.k64")
+        self.assertEqual(len(icon), kappdata.K64_BYTES)
+
+    def test_a_named_icon_that_is_not_there_is_refused(self):
+        src = self.source({"kode": "1", "icon": "gone.png"})
+        with self.assertRaisesRegex(ValueError, "gone.png"):
+            kappdata.load(src)
+
+    def test_a_folder_with_no_app_json_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "cannot read"):
+            kappdata.load(self.source())
+
+    def test_what_is_not_json_is_refused(self):
+        src = self.source(files={"app.json": b"{not json"})
+        with self.assertRaisesRegex(ValueError, "app.json"):
+            kappdata.load(src)
+
+    def test_an_app_json_over_the_boards_limit_is_refused(self):
+        src = self.source({"kode": "1", "notes": "x" * kappdata.JSON_MAX})
+        with self.assertRaisesRegex(ValueError, "longer than 1024"):
+            kappdata.load(src)
+
+
+class WriteTests(PackageCase):
+    """write() leaves the board's folder: app.json, icon.k64 and nothing else."""
+
+    def test_writes_the_two_files(self):
+        out = os.path.join(self.tmp, "out", "welcome")
+        kappdata.write(out, (b'{"kode":"1","icon":"icon.k64"}', ICON))
+        self.assertEqual(sorted(os.listdir(out)), ["app.json", "icon.k64"])
+        with open(os.path.join(out, "app.json"), "rb") as fh:
+            self.assertEqual(fh.read(), b'{"kode":"1","icon":"icon.k64"}')
+        with open(os.path.join(out, "icon.k64"), "rb") as fh:
+            self.assertEqual(fh.read(), ICON)
+
+    def test_what_an_older_build_left_goes(self):
+        out = self.board_folder({"icon.k64": ICON, "stale.txt": b"x"})
+        kappdata.write(out, (b'{"kode":"1"}', b""))
+        self.assertEqual(os.listdir(out), ["app.json"])
+
+
+class ReadTests(PackageCase):
+    """read() takes a board folder back, and only a folder the board would read."""
+
+    GOOD = b'{"kode":"1","icon":"icon.k64"}'
+
+    def test_reads_back_what_write_left(self):
+        out = os.path.join(self.tmp, "out")
+        kappdata.write(out, (self.GOOD, ICON))
+        self.assertEqual(kappdata.read(out), (self.GOOD, ICON))
+
+    def test_a_folder_without_an_icon(self):
+        out = self.board_folder({"app.json": b'{"kode":"1"}'})
+        self.assertEqual(kappdata.read(out), (b'{"kode":"1"}', b""))
+
+    def test_refuses_a_file_too_many(self):
+        out = self.board_folder({"app.json": self.GOOD, "icon.k64": ICON, "notes.txt": b"x"})
+        with self.assertRaisesRegex(ValueError, "notes.txt"):
+            kappdata.read(out)
+
+    def test_refuses_a_folder_with_no_app_json(self):
+        out = self.board_folder({"icon.k64": ICON})
+        with self.assertRaisesRegex(ValueError, "app.json"):
+            kappdata.read(out)
+
+    def test_refuses_an_icon_of_another_size(self):
+        out = self.board_folder({"app.json": self.GOOD, "icon.k64": ICON[:-1]})
+        with self.assertRaisesRegex(ValueError, "12287"):
+            kappdata.read(out)
+
+    def test_refuses_an_app_json_the_board_would_refuse(self):
+        out = self.board_folder({"app.json": b'{"kode":"2"}'})
+        with self.assertRaisesRegex(ValueError, "kode"):
+            kappdata.read(out)
+
+    def test_refuses_an_icon_the_app_json_does_not_name(self):
+        out = self.board_folder({"app.json": b'{"kode":"1"}', "icon.k64": ICON})
+        with self.assertRaisesRegex(ValueError, "icon"):
+            kappdata.read(out)
+
+    def test_refuses_an_app_json_that_names_an_icon_not_there(self):
+        out = self.board_folder({"app.json": self.GOOD})
+        with self.assertRaisesRegex(ValueError, "icon"):
+            kappdata.read(out)
+
+
+class DigestTests(unittest.TestCase):
+    def test_is_the_sha256_of_the_two_files_in_order(self):
+        self.assertEqual(kappdata.digest((b"{}", ICON)),
+                         hashlib.sha256(b"{}" + ICON).hexdigest())
+
+    def test_one_byte_of_either_file_changes_it(self):
+        base = kappdata.digest((b'{"kode":"1"}', ICON))
+        self.assertNotEqual(base, kappdata.digest((b'{"kode":"1" }', ICON)))
+        self.assertNotEqual(base, kappdata.digest((b'{"kode":"1"}', ICON[::-1])))
+
+
+class CommandLineTests(PackageCase):
+    """`kappdata.py build` and `digest`, as the release's scripts run them."""
+
+    TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "kappdata.py")
+
+    def run_tool(self, *args):
+        return subprocess.run([sys.executable, self.TOOL, *args],
+                              capture_output=True, text=True)
+
+    def test_build_writes_the_folder_and_prints_its_digest(self):
+        src = self.source({"kode": "1", "description": "A test app"}, {"icon.k64": ICON})
+        out = os.path.join(self.tmp, "fat", "welcome")
+        got = self.run_tool("build", src, out)
+        self.assertEqual(got.returncode, 0, got.stderr)
+        self.assertEqual(got.stdout.strip(), kappdata.digest(kappdata.read(out)))
+        self.assertEqual(kappdata.read(out), kappdata.load(src))
+
+    def test_digest_prints_the_same_for_the_folder_built(self):
+        src = self.source({"kode": "1"}, {"icon.k64": ICON})
+        out = os.path.join(self.tmp, "welcome")
+        built = self.run_tool("build", src, out)
+        again = self.run_tool("digest", out)
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(again.stdout, built.stdout)
+
+    def test_build_refuses_a_source_the_board_would_refuse(self):
+        src = self.source({"kode": "2"})
+        got = self.run_tool("build", src, os.path.join(self.tmp, "out"))
+        self.assertEqual(got.returncode, 1)
+        self.assertIn("kode", got.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "out")))
+
+    def test_digest_refuses_a_folder_with_a_file_too_many(self):
+        out = self.board_folder({"app.json": b'{"kode":"1"}', "notes.txt": b"x"})
+        got = self.run_tool("digest", out)
+        self.assertEqual(got.returncode, 1)
+        self.assertIn("notes.txt", got.stderr)
 
 
 if __name__ == "__main__":

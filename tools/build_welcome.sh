@@ -1,10 +1,20 @@
 #!/usr/bin/env bash
 #
-# Builds the welcome app from the source apps_image/welcome.pin names and puts
-# the image where assemble_release.sh picks it up, apps_image/<project>.bin,
-# with a stamp of the commit it was built from (apps_image/<project>.commit):
-# every factory pack carries the welcome app installed, and the release
-# refuses an image whose stamp is not the pin.
+# Builds the welcome app from the source apps_image/welcome.pin names and
+# leaves it where the release picks it up:
+#
+#   apps_image/<project>.bin      the app's image
+#   storage_image/.kode/appsdata/<project>/
+#                                 its app data as the board stores it, app.json
+#                                 and icon.k64, which the build puts in the
+#                                 FAT image
+#   apps_image/<project>.commit   the commit both were built from, the image's
+#                                 SHA-256 and the data folder's digest
+#
+# Every factory pack carries the welcome app installed and, apart from the
+# image, its data folder on the FAT, where Apps reads its icon, colour and
+# description. The release refuses an image or a folder whose stamp is not the
+# pin. Run it before `idf.py build`: the FAT image is made by that build.
 #
 # The welcome app lives in its own repository and builds with its own SDK pin,
 # so like the C5's firmware it is the one image here that `idf.py build`
@@ -13,7 +23,7 @@
 #
 #   usage: tools/build_welcome.sh
 #   exit:  0 on success, 1 if the pin cannot be read, the source is not at the
-#          pin, or the build fails
+#          pin, the build fails, or the app carries no appdata/app.json
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -65,17 +75,32 @@ if [ ! -f "$image" ]; then
     exit 1
 fi
 
+# The app's data folder, as the apps of kode-apps carry it: app.json and an
+# icon. Without it Apps shows the welcome app with no icon, colour or words.
+appdata="$src/$app_dir/appdata"
+if [ ! -f "$appdata/app.json" ]; then
+    echo "the welcome app carries no $app_dir/appdata/app.json at ${pinned:0:7}" >&2
+    exit 1
+fi
+
 cp "$image" "apps_image/$project.bin"
 
-# The stamp: "<commit> <sha256>", -dirty for a tree with local changes, which
-# no release accepts.
+# The data folder is built from the app's appdata/ by the tool that writes one
+# over the cable (tools/kappdata.py), so the FAT image holds the bytes a board
+# would store. Only this app's folder lives under storage_image/.kode.
+rm -rf storage_image/.kode
+data="$(python3 tools/kappdata.py build "$appdata" "storage_image/.kode/appsdata/$project")"
+
+# The stamp: "<commit> <sha256 of the image> <digest of the data folder>",
+# -dirty for a tree with local changes, which no release accepts.
 sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }'; }
 commit="$(git -C "$src" rev-parse HEAD)"
 if [ -n "$(git -C "$src" status --porcelain)" ]; then
     commit="${commit}-dirty"
 fi
-printf '%s %s\n' "$commit" "$(sha256 "apps_image/$project.bin")" > "apps_image/$project.commit"
+printf '%s %s %s\n' "$commit" "$(sha256 "apps_image/$project.bin")" "$data" > "apps_image/$project.commit"
 
 size="$(wc -c < "apps_image/$project.bin" | tr -d ' ')"
 echo
 echo "apps_image/$project.bin  <-  ${repo##*/} @ ${pinned:0:7}  ($size bytes), stamped in $project.commit"
+echo "storage_image/.kode/appsdata/$project/  <-  its app data, for the FAT image"

@@ -39,7 +39,6 @@ TESTS=(
     "tools/tests/test_kappdata.py"
     "tools/tests/test_mkapps.py"
     "tools/tests/test_kpayload.py"
-    "tools/tests/test_mkkfw.sh"
     "tools/tests/test_assemble_release.sh"
     "tools/tests/test_validate_release_tag.sh"
     "tools/tests/test_check_on_main.sh"

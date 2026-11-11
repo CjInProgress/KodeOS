@@ -27,9 +27,9 @@ typedef struct {
     uint32_t    rgb;     /**< The disc's colour: a colour of the kit's palette. */
 } want_t;
 
-/** @brief The table, in the marketplace's order. */
+/** @brief The table, in the root's order: All, then the marketplace's. */
 static const want_t s_want[TABLE_N] = {
-    { "general",       "other",          "General",       "apps",    KUI_PALETTE_MEDIUM_GREY },
+    { "all",           "other",          "All",           "apps",    KUI_PALETTE_MEDIUM_GREY },
     { "games",         "game",           "Games",         "games",   KUI_PALETTE_MEDIUM_GREY },
     { "tools",         "tool",           "Tools",         "tool",    KUI_PALETTE_MEDIUM_GREY },
     { "communication", "communications", "Communication", "talk",    KUI_PALETTE_MEDIUM_GREY },
@@ -121,13 +121,14 @@ void test_group_first_category_only(void)
     app(1U, "tools");
     app(2U, "games");
 
-    TEST_ASSERT_EQUAL_UINT8(2U, root(3U));
-    TEST_ASSERT_EQUAL_STRING("games", s_groups[0].name);
-    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[0].count);
-    TEST_ASSERT_EQUAL_STRING("tools", s_groups[1].name);
-    TEST_ASSERT_EQUAL_UINT8(1U, s_groups[1].count);
+    TEST_ASSERT_EQUAL_UINT8(3U, root(3U));
+    TEST_ASSERT_EQUAL_STRING("all", s_groups[0].name);
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
+    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[1].count);
+    TEST_ASSERT_EQUAL_STRING("tools", s_groups[2].name);
+    TEST_ASSERT_EQUAL_UINT8(1U, s_groups[2].count);
 
-    /* The app with two categories is in games alone. */
+    /* The app with two categories is in games alone, of the two. */
     TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 3U, "games", idx, APPS_MAX));
     TEST_ASSERT_EQUAL_UINT8(0U, idx[0]);
     TEST_ASSERT_EQUAL_UINT8(2U, idx[1]);
@@ -135,18 +136,53 @@ void test_group_first_category_only(void)
     TEST_ASSERT_EQUAL_UINT8(1U, idx[0]);
 }
 
-void test_group_no_category_goes_to_general(void)
+void test_group_all_holds_every_app(void)
+{
+    uint8_t idx[APPS_MAX];
+
+    app(0U, "games");
+    app(1U, "");
+    app(2U, "weather");
+    app(3U, "tools,games");
+
+    /* All is the first folder, and every app is in it. */
+    TEST_ASSERT_EQUAL_UINT8(4U, root(4U));
+    row_is(0U, KGUI_GROUP_ROW_GROUP, 0U);
+    TEST_ASSERT_EQUAL_STRING(KGUI_GROUP_ALL, s_groups[0].name);
+    TEST_ASSERT_EQUAL_UINT8(4U, s_groups[0].count);
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
+    TEST_ASSERT_EQUAL_UINT8(1U, s_groups[1].count);
+    TEST_ASSERT_EQUAL_STRING("tools", s_groups[2].name);
+    TEST_ASSERT_EQUAL_STRING("weather", s_groups[3].name);
+
+    TEST_ASSERT_EQUAL_UINT8(4U, kgui_group_members(s_cats, 4U, KGUI_GROUP_ALL, idx, APPS_MAX));
+    for ( uint8_t i = 0U; 4U > i; ++i )
+    {
+        TEST_ASSERT_EQUAL_UINT8(i, idx[i]);
+    }
+    TEST_ASSERT_EQUAL_UINT8(4U, kgui_group_members(s_cats, 4U, "All", idx, APPS_MAX));
+    TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 4U, KGUI_GROUP_ALL, idx, 2U));
+
+    /* No app, no folder. */
+    TEST_ASSERT_EQUAL_UINT8(0U, root(0U));
+    TEST_ASSERT_EQUAL_UINT8(0U, kgui_group_members(s_cats, 0U, KGUI_GROUP_ALL, idx, APPS_MAX));
+}
+
+void test_group_no_category_is_in_all_alone(void)
 {
     app(0U, "");
     app(1U, "other");
     app(2U, "games");
     app(3U, "other,games");
+    app(4U, "general");
+    app(5U, "all,tools");
 
-    TEST_ASSERT_EQUAL_UINT8(2U, root(4U));
+    /* No General folder, and none of the word an app may still say. */
+    TEST_ASSERT_EQUAL_UINT8(2U, root(6U));
     row_is(0U, KGUI_GROUP_ROW_GROUP, 0U);
     row_is(1U, KGUI_GROUP_ROW_GROUP, 1U);
-    TEST_ASSERT_EQUAL_STRING("general", s_groups[0].name);
-    TEST_ASSERT_EQUAL_UINT8(3U, s_groups[0].count);
+    TEST_ASSERT_EQUAL_STRING("all", s_groups[0].name);
+    TEST_ASSERT_EQUAL_UINT8(6U, s_groups[0].count);
     TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
     TEST_ASSERT_EQUAL_UINT8(1U, s_groups[1].count);
 }
@@ -165,19 +201,20 @@ void test_group_order_follows_the_table(void)
     app(8U, "creative");
     app(9U, "communication");
 
-    TEST_ASSERT_EQUAL_UINT8(9U, root(10U));
-    TEST_ASSERT_EQUAL_STRING("games", s_groups[0].name);
-    TEST_ASSERT_EQUAL_STRING("tools", s_groups[1].name);
-    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[1].count);
-    TEST_ASSERT_EQUAL_STRING("communication", s_groups[2].name);
-    TEST_ASSERT_EQUAL_STRING("wireless", s_groups[3].name);
-    TEST_ASSERT_EQUAL_STRING("creative", s_groups[4].name);
-    TEST_ASSERT_EQUAL_STRING("maker", s_groups[5].name);
-    TEST_ASSERT_EQUAL_STRING("ai", s_groups[6].name);
+    TEST_ASSERT_EQUAL_UINT8(10U, root(10U));
+    TEST_ASSERT_EQUAL_STRING("all", s_groups[0].name);
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
+    TEST_ASSERT_EQUAL_STRING("tools", s_groups[2].name);
+    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[2].count);
+    TEST_ASSERT_EQUAL_STRING("communication", s_groups[3].name);
+    TEST_ASSERT_EQUAL_STRING("wireless", s_groups[4].name);
+    TEST_ASSERT_EQUAL_STRING("creative", s_groups[5].name);
+    TEST_ASSERT_EQUAL_STRING("maker", s_groups[6].name);
+    TEST_ASSERT_EQUAL_STRING("ai", s_groups[7].name);
     /* Then the words the table does not know, alphabetically. */
-    TEST_ASSERT_EQUAL_STRING("alpha", s_groups[7].name);
-    TEST_ASSERT_EQUAL_STRING("zeta", s_groups[8].name);
-    for ( uint8_t i = 0U; 9U > i; ++i )
+    TEST_ASSERT_EQUAL_STRING("alpha", s_groups[8].name);
+    TEST_ASSERT_EQUAL_STRING("zeta", s_groups[9].name);
+    for ( uint8_t i = 0U; 10U > i; ++i )
     {
         row_is(i, KGUI_GROUP_ROW_GROUP, i);
     }
@@ -187,10 +224,13 @@ void test_group_single_app_is_a_group(void)
 {
     app(0U, "wireless");
 
-    TEST_ASSERT_EQUAL_UINT8(1U, root(1U));
+    TEST_ASSERT_EQUAL_UINT8(2U, root(1U));
     row_is(0U, KGUI_GROUP_ROW_GROUP, 0U);
-    TEST_ASSERT_EQUAL_STRING("wireless", s_groups[0].name);
+    row_is(1U, KGUI_GROUP_ROW_GROUP, 1U);
+    TEST_ASSERT_EQUAL_STRING("all", s_groups[0].name);
     TEST_ASSERT_EQUAL_UINT8(1U, s_groups[0].count);
+    TEST_ASSERT_EQUAL_STRING("wireless", s_groups[1].name);
+    TEST_ASSERT_EQUAL_UINT8(1U, s_groups[1].count);
 }
 
 void test_group_cap(void)
@@ -198,26 +238,27 @@ void test_group_cap(void)
     char    name[NAME_LEN];
     uint8_t i;
 
-    for ( i = 0U; i < (KGUI_GROUP_MAX + 1U); ++i )
+    /* All takes the first place: one category fewer than the cap fits. */
+    for ( i = 0U; KGUI_GROUP_MAX > i; ++i )
     {
         (void)snprintf(name, sizeof(name), "c%02u", (unsigned)i);
         app(i, name);
     }
 
-    TEST_ASSERT_EQUAL_UINT8(KGUI_GROUP_MAX + 1U, root(KGUI_GROUP_MAX + 1U));
+    TEST_ASSERT_EQUAL_UINT8(KGUI_GROUP_MAX + 1U, root(KGUI_GROUP_MAX));
     for ( i = 0U; KGUI_GROUP_MAX > i; ++i )
     {
         row_is(i, KGUI_GROUP_ROW_GROUP, i);
     }
     /* The category past the cap is a loose row, whole. */
-    row_is(KGUI_GROUP_MAX, KGUI_GROUP_ROW_APP, KGUI_GROUP_MAX);
+    row_is(KGUI_GROUP_MAX, KGUI_GROUP_ROW_APP, KGUI_GROUP_MAX - 1U);
     {
         /* The cap is the root's: by name, that category still lists its app. */
         uint8_t idx[APPS_MAX];
 
-        TEST_ASSERT_EQUAL_UINT8(1U, kgui_group_members(s_cats, KGUI_GROUP_MAX + 1U,
-                                                       "c21", idx, APPS_MAX));
-        TEST_ASSERT_EQUAL_UINT8(KGUI_GROUP_MAX, idx[0]);
+        TEST_ASSERT_EQUAL_UINT8(1U, kgui_group_members(s_cats, KGUI_GROUP_MAX,
+                                                       "c20", idx, APPS_MAX));
+        TEST_ASSERT_EQUAL_UINT8(KGUI_GROUP_MAX - 1U, idx[0]);
     }
 }
 
@@ -227,20 +268,22 @@ void test_group_cap_keeps_the_table_first(void)
     uint8_t idx[APPS_MAX];
     uint8_t i;
 
-    /* Ten unknown words, then a table folder: the cap cuts by the root's
-     * order, so the table's folder is kept and the last word is loose. */
-    for ( i = 0U; KGUI_GROUP_MAX > i; ++i )
+    /* Unknown words to fill the root, then a table folder: the cap cuts by
+     * the root's order, so the table's folder is kept and the last word is
+     * loose. */
+    for ( i = 0U; (KGUI_GROUP_MAX - 1U) > i; ++i )
     {
         (void)snprintf(name, sizeof(name), "c%02u", (unsigned)i);
         app(i, name);
     }
-    app(KGUI_GROUP_MAX, "games");
+    app(KGUI_GROUP_MAX - 1U, "games");
 
-    TEST_ASSERT_EQUAL_UINT8(KGUI_GROUP_MAX + 1U, root(KGUI_GROUP_MAX + 1U));
-    TEST_ASSERT_EQUAL_STRING("games", s_groups[0].name);
-    TEST_ASSERT_EQUAL_STRING("c19", s_groups[KGUI_GROUP_MAX - 1U].name);
-    row_is(KGUI_GROUP_MAX, KGUI_GROUP_ROW_APP, KGUI_GROUP_MAX - 1U);
-    TEST_ASSERT_EQUAL_UINT8(1U, kgui_group_members(s_cats, KGUI_GROUP_MAX + 1U,
+    TEST_ASSERT_EQUAL_UINT8(KGUI_GROUP_MAX + 1U, root(KGUI_GROUP_MAX));
+    TEST_ASSERT_EQUAL_STRING("all", s_groups[0].name);
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
+    TEST_ASSERT_EQUAL_STRING("c18", s_groups[KGUI_GROUP_MAX - 1U].name);
+    row_is(KGUI_GROUP_MAX, KGUI_GROUP_ROW_APP, KGUI_GROUP_MAX - 2U);
+    TEST_ASSERT_EQUAL_UINT8(1U, kgui_group_members(s_cats, KGUI_GROUP_MAX,
                                                    "c09", idx, APPS_MAX));
 }
 
@@ -250,11 +293,14 @@ void test_group_cap_follows_room_given(void)
     app(1U, "b");
     app(2U, "c");
 
-    TEST_ASSERT_EQUAL_UINT8(3U, kgui_group_root(s_cats, 3U, s_groups, 2U,
+    /* Room for two: All and the first category; the other two are loose. */
+    TEST_ASSERT_EQUAL_UINT8(4U, kgui_group_root(s_cats, 3U, s_groups, 2U,
                                                 s_rows, ROWS_MAX));
     row_is(0U, KGUI_GROUP_ROW_GROUP, 0U);
     row_is(1U, KGUI_GROUP_ROW_GROUP, 1U);
-    row_is(2U, KGUI_GROUP_ROW_APP, 2U);
+    TEST_ASSERT_EQUAL_STRING("a", s_groups[1].name);
+    row_is(2U, KGUI_GROUP_ROW_APP, 1U);
+    row_is(3U, KGUI_GROUP_ROW_APP, 2U);
 }
 
 void test_group_vanishes_falls_to_root(void)
@@ -277,10 +323,13 @@ void test_group_of_is_the_first_item(void)
 
     TEST_ASSERT_TRUE(kgui_group_of("Games,tools", name));
     TEST_ASSERT_EQUAL_STRING("games", name);
+    /* An app with no category of its own is filed under All alone. */
     TEST_ASSERT_TRUE(kgui_group_of("", name));
-    TEST_ASSERT_EQUAL_STRING("general", name);
+    TEST_ASSERT_EQUAL_STRING(KGUI_GROUP_ALL, name);
     TEST_ASSERT_TRUE(kgui_group_of("other,games", name));
-    TEST_ASSERT_EQUAL_STRING("general", name);
+    TEST_ASSERT_EQUAL_STRING(KGUI_GROUP_ALL, name);
+    TEST_ASSERT_TRUE(kgui_group_of("General", name));
+    TEST_ASSERT_EQUAL_STRING(KGUI_GROUP_ALL, name);
     TEST_ASSERT_FALSE(kgui_group_of(NULL, name));
     TEST_ASSERT_FALSE(kgui_group_of("games", NULL));
 }
@@ -295,11 +344,11 @@ void test_group_plural_merges(void)
     app(2U, "tool");
     app(3U, "Tool,games");
 
-    TEST_ASSERT_EQUAL_UINT8(2U, root(4U));
-    TEST_ASSERT_EQUAL_STRING("games", s_groups[0].name);
-    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[0].count);
-    TEST_ASSERT_EQUAL_STRING("tools", s_groups[1].name);
+    TEST_ASSERT_EQUAL_UINT8(3U, root(4U));
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
     TEST_ASSERT_EQUAL_UINT8(2U, s_groups[1].count);
+    TEST_ASSERT_EQUAL_STRING("tools", s_groups[2].name);
+    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[2].count);
     TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 4U, "games", idx, APPS_MAX));
     TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 4U, "game", idx, APPS_MAX));
     TEST_ASSERT_EQUAL_UINT8(1U, idx[1]);
@@ -324,7 +373,7 @@ void test_group_unknown_word_is_not_pluralised(void)
     /* Two forms of an unknown word are two groups: nobody wrote a plural for it. */
     app(0U, "weather");
     app(1U, "weathers");
-    TEST_ASSERT_EQUAL_UINT8(2U, root(2U));
+    TEST_ASSERT_EQUAL_UINT8(3U, root(2U));
     TEST_ASSERT_EQUAL_UINT8(1U, kgui_group_members(s_cats, 2U, "weather", idx, APPS_MAX));
     TEST_ASSERT_EQUAL_UINT8(0U, idx[0]);
 }
@@ -350,8 +399,18 @@ void test_group_table_keys_and_plurals(void)
         (void)memset(s_cats, 0, sizeof(s_cats));
         app(0U, s_want[t].key);
         app(1U, s_want[t].plural);
-        TEST_ASSERT_EQUAL_UINT8(1U, root(2U));
-        TEST_ASSERT_EQUAL_STRING(s_want[t].key, s_groups[0].name);
+        if ( 0U == t )
+        {
+            /* All and its other word: the one folder every root has. */
+            TEST_ASSERT_EQUAL_UINT8(1U, root(2U));
+        }
+        else
+        {
+            TEST_ASSERT_EQUAL_UINT8(2U, root(2U));
+            TEST_ASSERT_EQUAL_STRING(s_want[t].key, s_groups[1].name);
+            TEST_ASSERT_EQUAL_UINT8(2U, s_groups[1].count);
+        }
+        TEST_ASSERT_EQUAL_STRING(KGUI_GROUP_ALL, s_groups[0].name);
         TEST_ASSERT_EQUAL_UINT8(2U, s_groups[0].count);
         TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 2U, s_want[t].key, idx, APPS_MAX));
         TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 2U, s_want[t].plural, idx, APPS_MAX));
@@ -381,17 +440,17 @@ void test_group_title_by_the_table(void)
     TEST_ASSERT_EQUAL_STRING("Weather", title);
     kgui_group_title("farming,games", title);
     TEST_ASSERT_EQUAL_STRING("Farming", title);
-    /* No category is General. */
+    /* No category is All. */
     kgui_group_title("other", title);
-    TEST_ASSERT_EQUAL_STRING("General", title);
+    TEST_ASSERT_EQUAL_STRING("All", title);
     kgui_group_title("", title);
-    TEST_ASSERT_EQUAL_STRING("General", title);
+    TEST_ASSERT_EQUAL_STRING("All", title);
     kgui_group_title(NULL, title);
     TEST_ASSERT_EQUAL_STRING("", title);
     kgui_group_title("games", NULL);
 }
 
-void test_group_other_and_empty_are_general(void)
+void test_group_other_and_empty_are_all(void)
 {
     char    name[KGUI_GROUP_NAME_MAX];
     uint8_t idx[APPS_MAX];
@@ -405,7 +464,7 @@ void test_group_other_and_empty_are_general(void)
     row_is(0U, KGUI_GROUP_ROW_GROUP, 0U);
     TEST_ASSERT_EQUAL_UINT8(4U, s_groups[0].count);
     TEST_ASSERT_TRUE(kgui_group_of("Other", name));
-    TEST_ASSERT_EQUAL_STRING("general", name);
+    TEST_ASSERT_EQUAL_STRING("all", name);
     TEST_ASSERT_EQUAL_UINT8(4U, kgui_group_members(s_cats, 4U, "other", idx, APPS_MAX));
     TEST_ASSERT_EQUAL_UINT8(4U, kgui_group_members(s_cats, 4U, "", idx, APPS_MAX));
     TEST_ASSERT_EQUAL_STRING("apps", kgui_group_glyph("other"));
@@ -418,9 +477,9 @@ void test_group_case_is_folded(void)
     app(0U, "Games");
     app(1U, "games");
 
-    TEST_ASSERT_EQUAL_UINT8(1U, root(2U));
-    TEST_ASSERT_EQUAL_STRING("games", s_groups[0].name);
-    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[0].count);
+    TEST_ASSERT_EQUAL_UINT8(2U, root(2U));
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
+    TEST_ASSERT_EQUAL_UINT8(2U, s_groups[1].count);
     TEST_ASSERT_EQUAL_UINT8(2U, kgui_group_members(s_cats, 2U, "GAMES", idx, APPS_MAX));
 }
 
@@ -508,7 +567,7 @@ void test_group_table_has_twenty_drawn_folders(void)
         TEST_ASSERT_EQUAL_STRING(s_want[t].plural, kgui_group_art_alias(t));
         /* Every folder of the table has a glyph there is a picture of. */
         TEST_ASSERT_NOT_NULL(glyph);
-        for ( size_t g = 0U; g < (sizeof(s_glyphs) / sizeof(s_glyphs[0])); ++g )
+        for ( size_t g = 0U; (sizeof(s_glyphs) / sizeof(s_glyphs[0])) > g; ++g )
         {
             drawn = drawn || (strcmp(glyph, s_glyphs[g]) == 0);
         }
@@ -520,9 +579,9 @@ void test_group_table_has_twenty_drawn_folders(void)
         words[(2U * t) + 1U] = kgui_group_art_alias(t);
     }
     /* No word names two folders: no key or alias is said twice. */
-    for ( size_t a = 0U; a < (2U * TABLE_N); ++a )
+    for ( size_t a = 0U; (2U * TABLE_N) > a; ++a )
     {
-        for ( size_t b = a + 1U; b < (2U * TABLE_N); ++b )
+        for ( size_t b = a + 1U; (2U * TABLE_N) > b; ++b )
         {
             TEST_ASSERT_TRUE_MESSAGE(strcmp(words[a], words[b]) != 0, words[a]);
         }
@@ -546,14 +605,14 @@ void test_group_order_of_the_new_folders(void)
     app(4U, "games");
     app(5U, "alpha");
 
-    TEST_ASSERT_EQUAL_UINT8(6U, root(6U));
-    TEST_ASSERT_EQUAL_STRING("games", s_groups[0].name);
-    TEST_ASSERT_EQUAL_STRING("sensors", s_groups[1].name);
-    TEST_ASSERT_EQUAL_STRING("time", s_groups[2].name);
-    TEST_ASSERT_EQUAL_STRING("developer", s_groups[3].name);
+    TEST_ASSERT_EQUAL_UINT8(7U, root(6U));
+    TEST_ASSERT_EQUAL_STRING("games", s_groups[1].name);
+    TEST_ASSERT_EQUAL_STRING("sensors", s_groups[2].name);
+    TEST_ASSERT_EQUAL_STRING("time", s_groups[3].name);
+    TEST_ASSERT_EQUAL_STRING("developer", s_groups[4].name);
     /* Any other word after the table, alphabetically, as it always was. */
-    TEST_ASSERT_EQUAL_STRING("alpha", s_groups[4].name);
-    TEST_ASSERT_EQUAL_STRING("zeta", s_groups[5].name);
+    TEST_ASSERT_EQUAL_STRING("alpha", s_groups[5].name);
+    TEST_ASSERT_EQUAL_STRING("zeta", s_groups[6].name);
 }
 
 void test_group_mono_one_letter(void)
@@ -634,7 +693,8 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_group_first_category_only);
-    RUN_TEST(test_group_no_category_goes_to_general);
+    RUN_TEST(test_group_all_holds_every_app);
+    RUN_TEST(test_group_no_category_is_in_all_alone);
     RUN_TEST(test_group_order_follows_the_table);
     RUN_TEST(test_group_single_app_is_a_group);
     RUN_TEST(test_group_cap);
@@ -646,7 +706,7 @@ int main(void)
     RUN_TEST(test_group_unknown_word_is_not_pluralised);
     RUN_TEST(test_group_table_keys_and_plurals);
     RUN_TEST(test_group_title_by_the_table);
-    RUN_TEST(test_group_other_and_empty_are_general);
+    RUN_TEST(test_group_other_and_empty_are_all);
     RUN_TEST(test_group_case_is_folded);
     RUN_TEST(test_group_rows_max_truncates);
     RUN_TEST(test_group_members_max_truncates);

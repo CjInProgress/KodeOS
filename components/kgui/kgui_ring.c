@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /**
  * @file kgui_ring.c
- * @brief The Ring (kgui_ring.h); its edge adapts kodediy/kode-dot-os, kshell_edge.c.
+ * @brief The Ring (kgui_ring.h); its edge adapts kshell's kshell_edge.c.
  */
 #include "kgui_ring.h"
 

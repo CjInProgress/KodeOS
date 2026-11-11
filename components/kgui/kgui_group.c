@@ -18,7 +18,7 @@ _Static_assert(KGUI_GROUP_NAME_MAX == KAPP_CATEGORY_ITEM_MAX,
 _Static_assert(KGUI_GROUP_CATS_LEN == KAPP_CATEGORY_MAX,
                "an app's list is one category list");
 
-#define GROUP_GENERAL    "general"  /**< Where an app with no category, or `other`, goes (Luismi, 5-nov). */
+#define GROUP_GENERAL    "general"  /**< A word that names no folder, as `other` and the empty list. */
 
 /** @brief A folder of the marketplace's closed list: its words, its glyph and its disc's colour. */
 typedef struct {
@@ -30,22 +30,21 @@ typedef struct {
 } group_art_t;
 
 /*
- * The folders, in the order of the root: the marketplace's seven
- * (kodediy/ecosystem, packages/types/src/app-categories.ts), then the twelve
- * the launcher design of 5-nov-2026 drew for what a Dot is for, and Time
- * (kode-dot-os, informes/2026-11-05-lanzador/DISENO.md). kgui knows the
+ * The folders, in the order of the root: All, which holds every app, the
+ * marketplace's seven, then the twelve the launcher design drew for what a
+ * Dot is for, and Time. kgui knows the
  * thirteen new words whenever an app's category says them, before the
  * marketplace takes them. The names come from here and never from a rule, so
  * no folder is given a plural nobody wrote (`ai` is AI, not Ais). Every folder
  * wears the same Medium Grey disc, the apocrifa's disc of an app with no art:
  * a folder is told by its drawing and its name, in Soft Black with a touch of
- * Bold Yellow (kgui_folder_art(), Luismi, 5-nov, over decision 0040). A word
+ * Bold Yellow (kgui_folder_art()). A word
  * that is not here has no drawing and its disc wears its letters
  * (kgui_group_mono()).
  */
 static const group_art_t s_art[] = {
-    /* General first, when it has apps (Luismi, 5-nov). */
-    { "general",       "other",          "General",       "apps",    KUI_PALETTE_MEDIUM_GREY },
+    /* All first: the one folder every root has. */
+    { KGUI_GROUP_ALL,  "other",          "All",           "apps",    KUI_PALETTE_MEDIUM_GREY },
     { "games",         "game",           "Games",         "games",   KUI_PALETTE_MEDIUM_GREY },
     { "tools",         "tool",           "Tools",         "tool",    KUI_PALETTE_MEDIUM_GREY },
     { "communication", "communications", "Communication", "talk",    KUI_PALETTE_MEDIUM_GREY },
@@ -99,29 +98,30 @@ static const group_art_t *group_row(const char *name)
  * the table's key (`game` and `games` are the group `games`); any other word
  * stays as it is, with no plural made up for it.
  *
- * A list that is empty files its app under `general`.
+ * A list that is empty, or that starts with `other`, `general` or `all`,
+ * names no folder of the app's own: the app is in All alone.
  *
  * @param list An app's category list.
- * @param name Out: KGUI_GROUP_NAME_MAX bytes; `general` when there is none.
+ * @param name Out: KGUI_GROUP_NAME_MAX bytes; KGUI_GROUP_ALL when there is none.
  */
 static void group_first(const char *list, char *name)
 {
     char item[KAPP_CATEGORY_ITEM_MAX];
 
-    (void)snprintf(name, KGUI_GROUP_NAME_MAX, "%s", GROUP_GENERAL);
+    (void)snprintf(name, KGUI_GROUP_NAME_MAX, "%s", KGUI_GROUP_ALL);
     if ( kapp_cat_next(list, item, sizeof(item)) != NULL )
     {
         size_t i = 0U;
 
-        while ( (i < (KGUI_GROUP_NAME_MAX - 1U)) && ('\0' != item[i]) )
+        while ( ((KGUI_GROUP_NAME_MAX - 1U) > i) && ('\0' != item[i]) )
         {
             name[i] = (char)tolower((unsigned char)item[i]);
             ++i;
         }
         name[i] = '\0';
-        if ( '\0' == name[0] )
+        if ( ('\0' == name[0]) || (strcmp(name, GROUP_GENERAL) == 0) )
         {
-            (void)snprintf(name, KGUI_GROUP_NAME_MAX, "%s", GROUP_GENERAL);
+            (void)snprintf(name, KGUI_GROUP_NAME_MAX, "%s", KGUI_GROUP_ALL);
         }
         else
         {
@@ -226,16 +226,24 @@ uint8_t kgui_group_root(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
         cap = KGUI_GROUP_MAX;
     }
 
+    /* All comes first whatever the apps say, and holds every one of them. */
+    if ( (0U < n) && (0U < cap) )
+    {
+        (void)snprintf(groups[0].name, sizeof(groups[0].name), "%s", KGUI_GROUP_ALL);
+        groups[0].count = n;
+        ng = 1U;
+    }
+
     /* Pass 1: the groups, the next one in the root's order each time, so the
      * cap keeps the first folders of the table and not the first apps seen. */
-    while ( ng < cap )
+    while ( (0U < ng) && (ng < cap) )
     {
         bool found = false;
 
         for ( i = 0U; i < n; ++i )
         {
             group_first(cats[i], name);
-            if ( ((0U == ng) || (group_cmp(name, groups[ng - 1U].name) > 0))
+            if ( (group_cmp(name, groups[ng - 1U].name) > 0)
                 && ((!found) || (group_cmp(name, best) < 0)) )
             {
                 (void)snprintf(best, sizeof(best), "%s", name);
@@ -254,7 +262,7 @@ uint8_t kgui_group_root(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
     {
         group_first(cats[i], name);
         g = group_find(groups, ng, name);
-        if ( g < ng )
+        if ( (0U < g) && (g < ng) )
         {
             ++groups[g].count;
         }
@@ -266,7 +274,7 @@ uint8_t kgui_group_root(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
         ++nr;
     }
 
-    /* Pass 2: the apps that belong to no group. */
+    /* Pass 2: the apps whose own folder the cap left out. */
     for ( i = 0U; (i < n) && (nr < rows_max); ++i )
     {
         group_first(cats[i], name);
@@ -285,6 +293,7 @@ uint8_t kgui_group_members(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
 {
     char    want[KGUI_GROUP_NAME_MAX];
     char    name[KGUI_GROUP_NAME_MAX];
+    bool    every = false;
     uint8_t out = 0U;
     uint8_t i;
 
@@ -294,10 +303,11 @@ uint8_t kgui_group_members(const char (*cats)[KGUI_GROUP_CATS_LEN], uint8_t n,
     }
     /* The wanted name goes through the same door as an app's category. */
     group_first(group, want);
+    every = (strcmp(want, KGUI_GROUP_ALL) == 0);
     for ( i = 0U; (i < n) && (out < max); ++i )
     {
         group_first(cats[i], name);
-        if ( strcmp(name, want) == 0 )
+        if ( every || (strcmp(name, want) == 0) )
         {
             idx[out] = i;
             ++out;
@@ -440,7 +450,7 @@ static size_t group_char_len(const char *s)
 static bool group_same_first(const char *a, const char *b)
 {
     size_t const la   = group_char_len(a);
-    bool         same = (la == group_char_len(b));
+    bool         same = (group_char_len(b) == la);
 
     if ( same && (1U == la) )
     {

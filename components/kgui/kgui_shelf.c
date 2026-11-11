@@ -157,3 +157,46 @@ bool kgui_recents_push(char *list, const char *name)
     }
     return changed;
 }
+
+bool kgui_recents_drop(char *list, const char *name)
+{
+    char    names[KGUI_SHELF_MAX][KGUI_SHELF_NAME_MAX];
+    char    out[KGUI_RECENTS_LEN];
+    uint8_t n;
+    size_t  len     = 0U;
+    bool    dropped = false;
+
+    if ( (NULL == list) || (NULL == name) || ('\0' == name[0]) )
+    {
+        return false;
+    }
+    n = kgui_recents_split(list, names, (uint8_t)KGUI_SHELF_MAX);
+    out[0] = '\0';
+    for ( uint8_t i = 0U; i < n; ++i )
+    {
+        if ( 0 == strcmp(names[i], name) )
+        {
+            dropped = true;
+        }
+        else
+        {
+            const char *sep = "\n";
+            int         w;
+
+            if ( 0U == len )
+            {
+                sep = "";
+            }
+            w = snprintf(&out[len], sizeof(out) - len, "%s%s", sep, names[i]);
+            if ( (0 < w) && ((size_t)w < (sizeof(out) - len)) )
+            {
+                len += (size_t)w;
+            }
+        }
+    }
+    if ( dropped )
+    {
+        (void)memcpy(list, out, len + 1U);
+    }
+    return dropped;
+}

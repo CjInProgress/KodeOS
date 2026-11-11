@@ -42,10 +42,11 @@ CONTENTS
 13. esp_lcd_co5300 - Apache-2.0
 14. esp_codec_dev - Apache-2.0
 15. espressif/mqtt (esp-mqtt) - Apache-2.0
-16. QP/C - GPL-3.0 (special case, see note)
+16. QP/C - GPL-3.0-or-later
 17. RFAL / ST25R3916 driver - STMicroelectronics terms (special case, see note)
 18. Proxmark3 Mifare Classic key dictionary - GPL-3.0 (data, see note)
 19. Outfit - OFL-1.1
+20. DM Sans - OFL-1.1
     Components confirmed NOT compiled into this image
     Licence texts (reproduced once per distinct text)
 
@@ -313,7 +314,7 @@ Licence text: see "Apache License 2.0" in the licence-text section below.
 
 
 ================================================================================
-16. QP/C - special case
+16. QP/C
 ================================================================================
 Version:   8.1.4
 Upstream:  https://www.state-machine.com/qpc (https://github.com/QuantumLeaps/qpc)
@@ -323,10 +324,8 @@ SPDX:      GPL-3.0-or-later OR LicenseRef-QL-commercial (dual-licensed)
 QP/C Real-Time Event Framework (RTEF)
 Copyright (C) 2005-2025 Quantum Leaps, LLC. All rights reserved.
 
-kodeOS uses QP/C under the GPL-3.0 option of its dual licence. The
-project's position is that kodeOS will be released as open source at
-1.0 and is not commercialised before then. The full GNU General Public
-License, version 3, text is not reproduced in this file; it is available
+kodeOS uses QP/C under the GPL-3.0-or-later option of its dual licence.
+The full GNU General Public License, version 3, text is not reproduced in this file; it is available
 at sdk/components/qpc/LICENSE in this repository and at
 https://www.gnu.org/licenses/gpl-3.0.txt.
 
@@ -378,6 +377,18 @@ Upstream:  https://github.com/Outfitio/Outfit-Fonts
 SPDX:      OFL-1.1
 
 Copyright 2021 The Outfit Project Authors (https://github.com/Outfitio/Outfit-Fonts)
+
+Licence text: see "SIL Open Font License 1.1" in the licence-text section below.
+
+
+================================================================================
+20. DM Sans
+================================================================================
+Version:   the Bold 700 static cut, as bitmap faces
+Upstream:  https://github.com/googlefonts/dm-fonts
+SPDX:      OFL-1.1
+
+Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)
 
 Licence text: see "SIL Open Font License 1.1" in the licence-text section below.
 
@@ -930,7 +941,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 --------------------------------------------------------------------------
 SIL Open Font License 1.1
 --------------------------------------------------------------------------
-Covers: Outfit (#19).
+Covers: Outfit (#19), DM Sans (#20).
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

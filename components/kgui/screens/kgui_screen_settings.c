@@ -234,7 +234,7 @@ static void level_paint(const char *name, int32_t pm, const lv_image_dsc_t *glyp
         lv_obj_set_style_text_font(fig, font, LV_PART_MAIN);
         lv_label_set_text(fig, text);
         kgui_text_size(&said, text, font);
-        if ( fw >= (KGUI_CC_FIG_IN_X + said.x + KGUI_CC_FIG_OUT_GAP) )
+        if ( (KGUI_CC_FIG_IN_X + said.x + KGUI_CC_FIG_OUT_GAP) <= fw )
         {
             lv_obj_set_x(fig, KGUI_CC_FIG_IN_X);
             lv_obj_set_style_text_color(fig, KUI_COLOR_TEXT, LV_PART_MAIN);
@@ -272,7 +272,7 @@ static const lv_image_dsc_t *level_glyph(kgui_level_t which, int32_t pm)
         step = (p * KGUI_CC_SUN_STEPS) / (KGUI_CC_LEVEL_FULL + 1);
         return SUNS[(KGUI_CC_SUN_STEPS <= step) ? (KGUI_CC_SUN_STEPS - 1) : step];
     }
-    /* Just above nothing the Dot vibrates and does not sound (Luismi, 5-nov). */
+    /* Just above nothing the Dot vibrates and does not sound. */
     if ( level_vibrates(which, pm) )
     {
         return &kui_glyph_vib_40;
@@ -479,7 +479,7 @@ static void battery_build(lv_obj_t *parent)
     }
 
     /* The charge as a figure, on a small dark chip of its own, so it reads
-     * the same over the green and over the black (Luismi, 4-nov). */
+     * the same over the green and over the black. */
     lv_obj_t * const chip = lv_obj_create(c);
 
     if ( NULL != chip )
@@ -509,7 +509,7 @@ static void battery_build(lv_obj_t *parent)
 
 /**
  * @brief The share circle, between the battery and Turn off: there, and off,
- *        until sharing exists (Luismi, 4-nov). Not a control yet: it takes no
+ *        until sharing exists. Not a control yet: it takes no
  *        press and the pad's cursor passes it by.
  *
  * @param parent The screen.
@@ -629,7 +629,7 @@ void kgui_screen_settings_wave(bool run)
 
 /**
  * @brief The grab bar at the tab's foot: subtle, it says the tab can be taken
- *        from below (Luismi, 5-nov).
+ *        from below.
  * @param parent The settings screen.
  */
 static void handle_build(lv_obj_t *parent)
@@ -658,7 +658,7 @@ void kgui_screen_settings_build(void)
     lv_obj_add_style(scr, &kui_style_screen, 0);
     lv_obj_set_scrollable(scr, false);
 
-    for ( uint32_t i = 0U; i < (sizeof(s_circles) / sizeof(s_circles[0])); i++ )
+    for ( uint32_t i = 0U; (sizeof(s_circles) / sizeof(s_circles[0])) > i; i++ )
     {
         circle_build(scr, &s_circles[i]);
     }

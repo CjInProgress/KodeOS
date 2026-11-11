@@ -8,6 +8,8 @@
 
 #include "unity.h"
 
+#include "kode_defs.h"
+
 #include "kgui_dtext.h"
 
 #define KB 1024U            /**< Bytes in a KB. */
@@ -134,6 +136,31 @@ void test_dtext_meta_fits_a_small_buffer(void)
     TEST_ASSERT_LESS_THAN_UINT32(sizeof(out), strlen(out));
 }
 
+/* A whole erase is said by the notice that names the app, not by a hint. */
+void test_dtext_remove_end_of_a_whole_erase_has_no_hint(void)
+{
+    TEST_ASSERT_NULL(kgui_dtext_remove_end((uint8_t)KODE_OK));
+}
+
+void test_dtext_remove_end_says_what_went_wrong(void)
+{
+    TEST_ASSERT_EQUAL_STRING("Some files could not be removed", kgui_dtext_remove_end((uint8_t)KODE_IO_ERROR));
+    TEST_ASSERT_EQUAL_STRING("Busy. Try again", kgui_dtext_remove_end((uint8_t)KODE_DENIED));
+    TEST_ASSERT_EQUAL_STRING("Nothing to remove", kgui_dtext_remove_end((uint8_t)KODE_ERROR));
+    TEST_ASSERT_EQUAL_STRING("No answer. Try again", kgui_dtext_remove_end((uint8_t)KODE_TIMEOUT));
+    TEST_ASSERT_EQUAL_STRING("No answer. Try again", kgui_dtext_remove_end((uint8_t)KODE_NO_RESOURCES));
+}
+
+void test_dtext_remove_caption_says_when_files_go(void)
+{
+    char out[KGUI_DTEXT_CAPTION_MAX];
+
+    kgui_dtext_remove_caption(false, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("It leaves the Dot.", out);
+    kgui_dtext_remove_caption(true, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("It leaves the Dot.\nIts files go too.", out);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -146,5 +173,8 @@ int main(void)
     RUN_TEST(test_dtext_date_unknown_is_empty);
     RUN_TEST(test_dtext_meta_parts);
     RUN_TEST(test_dtext_meta_fits_a_small_buffer);
+    RUN_TEST(test_dtext_remove_end_of_a_whole_erase_has_no_hint);
+    RUN_TEST(test_dtext_remove_end_says_what_went_wrong);
+    RUN_TEST(test_dtext_remove_caption_says_when_files_go);
     return UNITY_END();
 }

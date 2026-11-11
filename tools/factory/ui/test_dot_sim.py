@@ -93,7 +93,7 @@ BTN_IDS = {"left": "pad-left", "bot": "bottom", "down": "pad-down", "top": "top"
            "right": "pad-right", "up": "pad-up"}
 
 # The station's rest voltages by (relay byte, ADC channel), in volts at the
-# measured point - Luismi's good case (test_pads.py). The ADC answers the pin,
+# measured point - the station's good case (test_pads.py). The ADC answers the pin,
 # which sits behind a /2 divider on every channel but A1.
 GOOD_VOLTS = {(0xFF, 0): 4.80, (0xFF, 1): 1.67, (0xFF, 2): 4.89, (0xFF, 3): 4.92,
               (0xFB, 0): 4.77, (0xFB, 1): 1.68, (0xFB, 2): 4.89, (0xFB, 3): 4.92,

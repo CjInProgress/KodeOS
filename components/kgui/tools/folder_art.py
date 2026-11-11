@@ -50,7 +50,7 @@ SS = 8
 INK = (0x19, 0x19, 0x19)      # Soft Black
 GOLD = (0xFF, 0xAC, 0x00)     # Bold Yellow
 DISC = (0xC2, 0xBA, 0xB3)     # Medium Grey, the disc's colour: the sheet only
-BRAND_FONT = Path.home() / "Documents/Kode/5-Marca/kode-brand/fonts/outfit/Outfit[wght].ttf"
+BRAND_FONT = Path(__file__).resolve().parents[3] / "sdk/components/kui/fonts/assets/Outfit-Bold.ttf"
 
 
 def fill(body, edge=0.0):
@@ -186,7 +186,7 @@ ART = {
         ("C", line('<path d="M6.6 8.8l3.4 3.2-3.4 3.2"/>')),
         ("Y", fill('<rect x="12" y="13.4" width="6" height="2.6" rx=".4"/>')),
     ]),
-    "general": ("General", "Three in a row and the one that does not fit", [
+    "all": ("All", "Every app, and the one that will not sit still", [
         ("K", fill('<rect x="3.2" y="3.2" width="6.8" height="6.8" rx="1.3"/>', 1.0)),
         ("K", fill('<rect x="13.2" y="3.2" width="6.8" height="6.8" rx="1.3"/>', 1.0)),
         ("K", fill('<rect x="3.2" y="13.2" width="6.8" height="6.8" rx="1.3"/>', 1.0)),
@@ -337,12 +337,10 @@ const lv_image_dsc_t *kgui_folder_art(const char *key)
 
 
 def font(size):
-    """The brand's Outfit for the sheet's names when it is there, any font when not."""
+    """The kit's Outfit Bold for the sheet's names when it is there, any font when not."""
     try:
-        f = ImageFont.truetype(str(BRAND_FONT), size)
-        f.set_variation_by_axes([600])
-        return f
-    except (OSError, AttributeError):
+        return ImageFont.truetype(str(BRAND_FONT), size)
+    except OSError:
         return ImageFont.load_default()
 
 

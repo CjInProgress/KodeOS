@@ -51,6 +51,8 @@
 #include "kgui_haptic.h"   /* the interface's buzz: four effects, one call */
 #include "kgui_prefs.h"    /* the interface's two settings: keys, words, store */
 #include "kgui_scene_label.h" /* a scene's English words, for what the interface shows */
+#include "kgui_osrel.h"    /* kodeOS's own update: the service's answer and About's row */
+#include "kgui_span_label.h"  /* a length of time's English words, and the step round a setting's */
 #include "kgui_keyboard.h" /* the keypad card: a password or a hidden name, by multitap */
 #include "kgui_screens.h" /* this component's own screens and subjects */
 #include "kgui_motion.h"   /* the launcher's rail and motions: Step, Glide, Rubber, Slide */
@@ -71,6 +73,7 @@
 #include "kgui_return.h"   /* the first frame after an app, and how long it waits for the list */
 #include "kgui_welcome.h"  /* the landing on the face after Welcome */
 #include "kgui_wifi.h"     /* the radios' rows' words, and why a join failed */
+#include "kgui_trim.h"     /* a name without the spaces at its ends */
 #include "kgui_syscard.h"  /* the words of the stopped, critical and factory reset cards, and their decisions */
 #include "kgui_sysscreen.h" /* the frame of a system screen: protagonist, figure, words, pill */
 #if CONFIG_KODE_TEST_DOT
@@ -351,7 +354,7 @@ static const GuiSysCard *gui_syscard_of(GuiSheet kind)
     const GuiSysCard *found = NULL;
 
     for ( size_t i = 0U;
-         (i < (sizeof(TABLE) / sizeof(TABLE[0]))) && (NULL == found);
+         ((sizeof(TABLE) / sizeof(TABLE[0])) > i) && (NULL == found);
          ++i )
     {
         if ( TABLE[i].kind == kind )
@@ -702,9 +705,9 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
 #define GUI_ROW_LIT        1U
 #define GUI_ROW_UNDRESSED  0xFFU
 
-/* The launcher's two levels (GuiStateEvt::level): the root, which holds the
- * groups and then the apps that belong to none, and one group's apps. */
-#define GUI_LEVEL_ROOT   KODE_GUI_LEVEL_ROOT   /* the groups, then the loose apps */
+/* The launcher's two levels (GuiStateEvt::level): the root, which holds All,
+ * the groups and then the apps whose group did not fit, and one group's apps. */
+#define GUI_LEVEL_ROOT   KODE_GUI_LEVEL_ROOT   /* All and the groups, then the loose apps */
 #define GUI_LEVEL_GROUP  KODE_GUI_LEVEL_GROUP  /* the apps of the group in me->group */
 
 /* A group row's selection name: this and the group's name. An app's own name
@@ -767,7 +770,7 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
 
 /** A scan asked and never answered is given up after this long, and the next
  *  period asks again: the page searches by itself and has no button to search
- *  again (Luismi, 4-nov), so it must never wait on a lost answer. Past the
+ *  again, so it must never wait on a lost answer. Past the
  *  driver's own ceiling on a sweep and on its last step: asking while the
  *  first is still running is refused with an empty listing, and at 20 s that
  *  was what blanked the page (75dba1c). */
@@ -809,6 +812,7 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
  * that grew would show its first eight, not garbage. */
 #define GUI_WIFI_SAVED_MAX   8U
 #define GUI_SSID_BYTES       33U  /**< A network's name as the rows keep it: the 32 bytes an SSID takes and the terminator. */
+#define GUI_NOTICE_BYTES     48U  /**< A notice about an app: its name, the words after it and the terminator. */
 
 #if CONFIG_KODEOS_WIFI
 /**
@@ -821,8 +825,7 @@ enum {
     GUI_KBD_NONE = 0,   /**< No errand: no keypad is up, or its work is done and the card is closing. */
     GUI_KBD_NAME,       /**< A hidden network's name is being typed. */
     GUI_KBD_PASS,       /**< A password is being typed. */
-    GUI_KBD_JOINING,    /**< The join was asked for and its answer is awaited; the text is kept for the answer. */
-    GUI_KBD_BLE         /**< The name Bluetooth shows is being typed. */
+    GUI_KBD_JOINING     /**< The join was asked for and its answer is awaited; the text is kept for the answer. */
 };
 
 /* How long the keypad waits for the join's answer before it says it could not
@@ -1075,10 +1078,9 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_HINT_ROOM_LOST  "No answer. Try again"           /**< What it says when AO_AppMgr does not answer. */
 #define GUI_HINT_TOO_BIG    "Too big for this Dot"           /**< What it says of an app that cannot fit the apps region. */
 #define GUI_LONG_PRESS_MS   KODE_BUTTON_HOLD_MS                  /**< A finger that stays on an app's row, or on the Wi-Fi or Bluetooth circle, this long, within KUI_GESTURE_TAP_PX of where it landed and with no claim, opens its details or its page: the time TOP held takes. */
-#define GUI_REMOVE_WAIT_MS  15000U                               /**< The longest the Removing card waits for AO_AppMgr to take the app off the list. */
+#define GUI_REMOVE_MARGIN_MS 5000U                               /**< What the Removing card waits past AO_AppMgr's own bound on AO_Storage. */
+#define GUI_REMOVE_WAIT_MS  (APPMGR_WIPE_MS + GUI_REMOVE_MARGIN_MS) /**< The longest the Removing card waits for AO_AppMgr to say the erase ended. */
 #define GUI_REMOVE_GUARD_MS 400U                                 /**< The question before Remove ignores its pill this long after it is written: a tap or a TOP release that opened or followed it is not an answer. */
-#define GUI_REMOVE_POLL_MS  1000U                                /**< How often the Removing card asks the apps again while the app is still listed. */
-#define GUI_HINT_REMOVE_FAILED "Still installed"                /**< What the Removing card says when the app does not leave the list in time. */
 #define GUI_PCT_FULL        100                              /**< One hundred percent: a level, a share of the glass. */
 
 /** @brief The auto-lock time of a board with nothing stored, in seconds: two
@@ -1086,7 +1088,7 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
  *         no button and no finger before the face comes back is the owner's
  *         to choose on the Screen sheet (s_locks), and is counted only while
  *         nothing else is under way - see gui_idle_check(). */
-#define GUI_LOCK_DEFAULT_S  60U    /* a minute without input locks (Luismi, 4-nov: reasonable times) */
+#define GUI_LOCK_DEFAULT_S  60U    /* a minute without input locks (reasonable times) */
 
 /** @brief Kody's sleep time while he follows the auto-lock's: no seconds of
  *         its own, and what a board with nothing stored does. */
@@ -1241,6 +1243,31 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_OS_IMAGE  "kodeos.bin"
 
 /**
+ * @brief Where kodeOS asks which of its versions is the latest.
+ *
+ * Empty in a build that asks nobody: About's row then offers the card's
+ * image alone. The answer names a version and the link of its `.kfw`
+ * (kgui_osrel.h).
+ */
+#define GUI_OS_SERVICE        CONFIG_KGUI_OS_UPDATE_URL
+#define GUI_OS_SERVICE_NONE   1U         /**< sizeof an empty GUI_OS_SERVICE: its terminator alone. */
+#define GUI_OS_SERVICE_PLAIN  "http://"  /**< A service asked with no TLS: a bench's, whose release may be a plain link too. */
+#define GUI_OS_ALIGN          64U        /**< What the service's block in PSRAM is aligned to, in bytes. */
+#define GUI_HTTP_OK           200U       /**< The service answered with a release. */
+#define GUI_HTTP_NOT_FOUND    404U       /**< The service's answer when no release is published. */
+
+_Static_assert(sizeof(GUI_OS_SERVICE) <= KODE_NET_URL_MAX,
+               "the update service's URL must fit an HTTP ask");
+_Static_assert(KGUI_OSREL_URL_MAX <= KODE_FLASH_SRC_MAX,
+               "a release's link must fit an install's source");
+
+/** @brief What kodeOS keeps of its update service, in PSRAM. */
+typedef struct {
+    char         answer[KGUI_OSREL_ANSWER_MAX + 1U];  /**< The service's last answer as it came, and a terminator. Lent to AO_Net while a question is out. */
+    kgui_osrel_t rel;                                 /**< The newer release, while the check says there is one. */
+} GuiOsUpdate;
+
+/**
  * @brief The ESP32-C5's own firmware, which the factory's internal FAT carries.
  *
  * The radio coprocessor's image (`install dst=c5` writes it), never an app:
@@ -1318,7 +1345,8 @@ typedef enum {
     GUI_ASK_NONE = 0,   /**< Nothing is held back. */
     GUI_ASK_RUN,        /**< An installed app is run: its project name. */
     GUI_ASK_FLASH,      /**< A file is written, to be run once the edge has closed: its file name. */
-    GUI_ASK_OS          /**< kodeOS is updated from the card. */
+    GUI_ASK_OS,         /**< kodeOS is updated from the card. */
+    GUI_ASK_OS_NET      /**< kodeOS is updated to the release the service named. */
 } GuiAsk;
 
 /**
@@ -1363,6 +1391,7 @@ typedef enum {
 #define GUI_TAG_SCREEN_LOCK    2U   /* the auto-lock time, opens its list   */
 #define GUI_TAG_SCREEN_REST    3U   /* Rest after: the time to Rest, stepped */
 #define GUI_TAG_SCREEN_SCENE   4U   /* Kody's scene, stepped                */
+#define GUI_TAG_SCREEN_OFF     5U   /* Turn off after: the time asleep, stepped */
 #define GUI_TAG_SCREEN_HAPTIC  6U   /* Haptics, stepped                     */
 #define GUI_TAG_SCREEN_3V3     7U   /* J3's 3.3 V, a switch                 */
 #define GUI_TAG_SCREEN_5V      8U   /* J3's 5 V, a switch                   */
@@ -1375,11 +1404,15 @@ typedef enum {
 #define GUI_TAG_BLE_SWITCH    40U   /* the BLE stack, on or off             */
 #define GUI_TAG_BLE_CONSOLE   41U   /* a central is on the console          */
 #define GUI_TAG_BLE_BONDS     42U   /* how many peers are remembered        */
-#define GUI_BLE_PREFIX        "KODE "  /* What the apps look for: always there (Luismi, 5-nov). */
-#define GUI_BLE_TYPED_MAX     15U      /* What a person types after it. */
+#define GUI_BLE_PREFIX        "KODE "  /* What the apps look for: always there. */
+#define GUI_BLE_WORDS_MAX     15U      /* What a name holds after it. */
 #define GUI_BLE_NAME_MAX      20U      /* The whole name; the scan response holds 29. */
+#define GUI_BLE_CHAR_FIRST    0x20U    /* The first byte a name may hold: the space. */
+#define GUI_BLE_CHAR_DEL      0x7FU    /* DEL, a control byte above the printable ones. */
 #define GUI_NVS_KEY_BLE_NAME  "blename"
-#define GUI_TAG_BLE_NAME      44U   /* the name it shows: tap to change it  */
+#define GUI_CONFIG_KEY_BLE_NAME "ble_name" /* `config`'s name for kgui/blename. */
+#define GUI_BLE_NAME_NONE     "-"      /* `ble_name`'s value for no name: the serial. */
+#define GUI_TAG_BLE_NAME      44U   /* the name it shows                    */
 #define GUI_TAG_BLE_FORGET    43U   /* forget every one of them             */
 #define GUI_TAG_BLE_PAIR      45U   /* show the board, so a new one pairs   */
 #define GUI_TAG_BAT_VALUE     50U   /* what is left, as a fill              */
@@ -1389,7 +1422,7 @@ typedef enum {
 #define GUI_TAG_ABOUT_RADIO   60U   /* the C5's own firmware                */
 #define GUI_TAG_ABOUT_CARD    61U   /* the microSD, if there is one         */
 #define GUI_TAG_ABOUT_UPTIME  62U   /* how long this boot has lasted        */
-#define GUI_TAG_ABOUT_UPDATE  63U   /* write kodeos.bin from the card       */
+#define GUI_TAG_ABOUT_UPDATE  63U   /* update kodeOS: the card or the service */
 #define GUI_TAG_ABOUT_RESET   64U   /* ask for the factory reset            */
 #define GUI_TAG_ABOUT_TECH    65U   /* show or hide the technical rows      */
 #define GUI_TAG_KODY_UPDATE   66U   /* fetch Kody's official pack           */
@@ -1533,14 +1566,28 @@ static const GuiListPage s_list_pages[] = {
 #define GUI_ASCII_ZERO     48U
 
 /**
- * @brief The sequence numbers this AO puts on its requests of `vol`.
+ * @brief The key of the time asleep before the board turns itself off,
+ *        AO_LowPower's own setting (`config key="off_after"`).
+ *
+ * Kept where the console's `config` keeps it, as the volume is: this AO asks
+ * the owner by event, and the owner applies and stores. The words it offers
+ * and their order are read from the owner's row (kode_config_find()); kgui
+ * keeps no copy of them.
+ */
+#define GUI_OFF_KEY        "off_after"
+
+/**
+ * @brief The sequence numbers this AO puts on its requests of `vol` and of
+ *        `off_after`.
  *
  * The console numbers its own from 1 and only takes the answer to the one in
- * flight; the top bit keeps these two out of its way, and says in the answer
- * which of the two it is.
+ * flight; the top bit keeps these out of its way, and says in the answer
+ * which request it is.
  */
 #define GUI_VOL_SEQ_READ   0x80000001U   /**< Ask what the volume is. */
 #define GUI_VOL_SEQ_SET    0x80000002U   /**< Set it and keep it. */
+#define GUI_OFF_SEQ_READ   0x80000003U   /**< Ask what the time asleep before OFF is. */
+#define GUI_OFF_SEQ_SET    0x80000004U   /**< Set it and keep it. */
 #define GUI_ZONE_SEQ_BASE  0x80000100U   /**< kgui's own `zone` requests start here: the top half, which the console's counter never reaches. */
 #define GUI_ZONE_SEQ_MASK  0x0000FFFFU   /**< How far they count before they wrap. */
 
@@ -1906,12 +1953,13 @@ typedef struct {
     int8_t    sel_idx;
     char      sel_name[KODE_APP_FILE_MAX];
 
-    /* THE LEVEL. The launcher shows its root, the groups and then the apps
-     * that belong to none (kgui_group_root()), or one group's apps
-     * (kgui_group_members()). A group is a view of the apps' first category,
-     * never data: it is derived in the pass that builds rows[], so an empty
-     * group cannot exist. group is the truth about where the launcher is;
-     * when the apps of it are gone the pass falls back to the root.
+    /* THE LEVEL. The launcher shows its root, All and the groups and then
+     * the apps whose group did not fit (kgui_group_root()), or one group's
+     * apps (kgui_group_members()). All is every app and a group is a view of
+     * the apps' first category, never data: both are derived in the pass that
+     * builds rows[], so an empty group cannot exist. group is the truth about
+     * where the launcher is; when the apps of it are gone the pass falls back
+     * to the root.
      *
      * The selection is kept by name for each level: sel_name for the level on
      * the glass, and sel_root for the root while a group is open, so going
@@ -2072,7 +2120,8 @@ typedef struct {
     uint32_t      rm_since_ms;              /**< When the erase was asked. */
     uint32_t      rm_ask_ms;                /**< When the question was written: its pill takes no answer for GUI_REMOVE_GUARD_MS. */
     bool          rm_busy;                  /**< An answer is on its way (the question's, or the erase): a second one is ignored until the card ends. */
-    uint32_t      rm_poll_ms;               /**< When the apps were last asked about. */
+    bool          rm_installed;             /**< It is an installed app; false for a file that is not installed. */
+    bool          rm_out;                   /**< The erase is with AO_AppMgr: its end is awaited, with the card up or not. */
 
     /* THE FACTORY RESET: the request that is out, and AO_Boot's answer as
      * the wait card reads it. */
@@ -2713,6 +2762,9 @@ typedef struct {
                                *   is where a card's header drag stops being
                                *   the header's.                            */
     GuiSheet  sheet;         /**< Which sheet is up; NONE when none.        */
+    GuiSheet  sheet_under;   /**< The settings page a system card took over,
+                               *   or NONE: where the card's close goes back
+                               *   to (gui_sheet_reopen()).                 */
     lv_obj_t *sheet_rows[GUI_SHEET_ROWS_MAX];
     uint16_t  sheet_tag[GUI_SHEET_ROWS_MAX];
                              /**< One number per row, and what it means is
@@ -2816,6 +2868,9 @@ typedef struct {
     bool     adv_on;         /**< The board is on the air and can be found:
                                *   advertising, and not hidden.            */
     bool     ble_pair_open;  /**< Pair new device's time is running.        */
+    bool     ble_pair_wait;  /**< It was asked with a device connected and
+                              *   starts when that one leaves.              */
+    bool     ble_linked;     /**< A device is connected: nothing is on the air. */
     bool     ble_console;    /**< A central is attached to the console.     */
     uint8_t  ble_bonds;      /**< Bonded peers in the store. A COUNT is all
                                *   the radio exposes - no names, no
@@ -2838,6 +2893,10 @@ typedef struct {
                                *   it, or the pad moved it and the request
                                *   was refused. The release, the next pad
                                *   press or the screen's exit keeps it. */
+    char     off_word[KODE_CONFIG_VALUE_MAX + 1U];
+                             /**< The time asleep before the board turns
+                               *   itself off, as AO_LowPower says it; empty
+                               *   until it has answered. */
     uint8_t  soc;            /**< Charge left, in percent: the Battery
                                *   sheet's bar.                             */
     uint8_t  bat_state;      /**< What that much means: GUI_SET_BAT_*.      */
@@ -2861,6 +2920,7 @@ typedef struct {
     kgui_haptic_level_t haptic_pref; /**< What the Vibration row chose; the volume's stops may ask otherwise. */
     char     ble_name[GUI_BLE_NAME_MAX + 1U]; /**< The name chosen for Bluetooth; empty for the serial. */
     bool     first_hold;     /**< The glass stays black: the first thing lit is whole. */
+    bool     disp_row;       /**< The `display` row has the glass: no pass draws. */
     uint32_t first_hold_ms;  /**< Since when. */
     bool     rest_hint;      /**< Rest says how to wake: any input but the top button. */
     uint32_t rest_hint_ms;   /**< When it started saying so. */
@@ -2919,6 +2979,10 @@ typedef struct {
                                *   itself; 0 when it did not say. Not the
                                *   volume's size - a card is not obliged to
                                *   carry a filesystem that spans it.        */
+    GuiOsUpdate *os;         /**< The update service's answer and the release
+                               *   it named, in PSRAM: NULL until the first
+                               *   question, and when there was no room.    */
+    uint8_t  os_check;       /**< kgui_osrel_check_t: where the check stands. */
     uint8_t  write_what;     /**< kwrite_t: what the write on the glass is
                                *   and how it ends - the Opening sheet's
                                *   title, name and sentence, and the
@@ -3073,6 +3137,8 @@ static QState gui_sheet_body(Gui * const me, QEvt const * const e,
 static void gui_sheet_ask_first(Gui * const me);
 static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                                QStateHandler home);
+static const GuiListPage *gui_sheet_back_page(Gui const * const me,
+                                              QStateHandler home);
 static QState gui_sheet_leave(Gui * const me, QStateHandler home);
 static QState Gui_btn_test(Gui * const me, QEvt const * const e);
 static QState Gui_tp_test(Gui * const me, QEvt const * const e);
@@ -3112,6 +3178,8 @@ static void gui_vol_set(Gui * const me, int32_t pct, bool persist);
 static void gui_vol_keep(Gui * const me);
 static void gui_vol_ask(void);
 static void gui_vol_answer(Gui * const me, KodeConfigAnsEvt const * const a);
+static void gui_off_after_ask(void);
+static void gui_off_after_answer(Gui * const me, KodeConfigAnsEvt const * const a);
 static GuiSetLook gui_set_look(uint8_t which);
 static GuiSetLook gui_more_look(uint8_t which);
 static void gui_sheet_rest_take(Gui const * const me);
@@ -3146,9 +3214,9 @@ static void gui_more_fill(Gui * const me);
 static void gui_time_fill(Gui * const me);
 static void gui_time_follow(Gui * const me);
 static uint32_t gui_time_minute(Gui const * const me, struct tm *out);
-static void gui_ble_name_set(Gui * const me, const char *typed);
 static const char *gui_ble_name_shown(Gui const * const me);
 static void gui_ble_name_send(Gui const * const me);
+static void gui_ble_name_config(Gui * const me, KodeConfigReqEvt const * const r);
 static bool gui_row_cut(Gui const * const me, int32_t cy, kgui_rail_t const *edge);
 static void gui_vol_motor(Gui const * const me);
 static void gui_first_hold_tick(Gui * const me);
@@ -3264,6 +3332,10 @@ static void gui_bat_refresh(Gui * const me);
 static void gui_about_fill(Gui * const me);
 static void gui_about_act(Gui * const me, uint16_t tag);
 static bool gui_os_image_on_card(Gui const * const me);
+static void gui_os_ask(Gui * const me, const char *why);
+static void gui_os_answer(Gui * const me, NetHttpRspEvt const * const r);
+static kgui_osrel_row_t gui_os_row(Gui const * const me);
+static const char *gui_os_version(Gui const * const me);
 static const char *gui_boot_reason_name(void);
 static void gui_uptime_text(char *dst, size_t cap);
 static void gui_sheet_open_kind(Gui * const me, GuiSheet kind);
@@ -3518,7 +3590,7 @@ static void gui_stopped_fill(Gui * const me);
 static void gui_stopped_run(Gui * const me);
 static void gui_stopped_follow(Gui * const me);
 static void gui_battery_fill(Gui * const me);
-static void gui_battery_check(Gui * const me, bool critical, bool charging);
+static void gui_battery_check(Gui * const me, bool critical);
 static QState Gui_returning(Gui * const me, QEvt const * const e);
 static bool gui_return_begin(Gui * const me);
 static void gui_return_listed(Gui * const me);
@@ -3634,7 +3706,7 @@ static void on_shelf_pressed(lv_event_t *e);
 static void gui_list_finish(Gui * const me);
 static void gui_details_act(Gui * const me);
 static void gui_remove_go(Gui * const me);
-static void gui_remove_done(Gui * const me, bool gone);
+static void gui_remove_done(Gui * const me, uint8_t status);
 static void gui_remove_tick(Gui * const me);
 static void gui_long_press_tick(Gui * const me);
 static void gui_details_navigate(Gui * const me, kdrv_button_t b, bool pressed);
@@ -3863,7 +3935,7 @@ static void gui_dump(Gui * const me)
         KLOG_N(TAG, "  selftest: idle, no run kept");
     }
     KLOG_N(TAG, "  set: sel=%s",
-           (me->set_sel < (uint8_t)(sizeof(SET_NAMES) / sizeof(SET_NAMES[0])))
+           ((uint8_t)(sizeof(SET_NAMES) / sizeof(SET_NAMES[0])) > me->set_sel)
            ? SET_NAMES[me->set_sel] : "?");
 
     /* And the face's red arc: idle, filling or emptying, and how far. */
@@ -3925,7 +3997,7 @@ static void gui_dump(Gui * const me)
         }
         KLOG_N(TAG, "  assets: source=%s scenes=%u ready=%s", SRC[src],
                (unsigned)kgui_assets_scene_count(), ready);
-        for ( uint16_t i = 0U; i < kgui_assets_scene_count(); ++i )
+        for ( uint16_t i = 0U; kgui_assets_scene_count() > i; ++i )
         {
             const char *dead = "";
 
@@ -3986,7 +4058,7 @@ static void gui_dump(Gui * const me)
                        gui_sheet_kind_name(me->sheet), (unsigned)left);
             }
         }
-        if ( GUI_SHEET_REMOVING == me->sheet )
+        if ( me->rm_out )
         {
             KLOG_N(TAG, "  remove: %s asked %u ms ago", me->rm_name,
                    (unsigned)(khal_time_ms() - me->rm_since_ms));
@@ -4060,6 +4132,14 @@ static void gui_dump(Gui * const me)
                    me->sd_known ? (me->sd_mounted ? "mounted" : "absent")
                                 : "asking",
                    gui_os_image_on_card(me) ? "kodeos.bin" : "none");
+            /* And what its Software update row says. */
+            {
+                char words[KGUI_OSREL_TEXT_MAX];
+
+                kgui_osrel_row_text(gui_os_row(me), gui_os_version(me), words,
+                                    sizeof(words));
+                KLOG_N(TAG, "  update: %s", words);
+            }
         }
     }
 }
@@ -4533,7 +4613,7 @@ static void gui_page_scroll_stop(void)
  *
  * A page with no circle under it, and a level deeper or back, fades in over
  * the whole glass, as a folder does (gui_level_grow_start()): nothing in
- * Settings slides along the glass (Luismi, 6-nov).
+ * Settings slides along the glass.
  *
  * The page is a live card over the screen under it, and a pass of it costs
  * 75-95 ms: faded live, it would move a few frames a second. So it moves on
@@ -4755,7 +4835,7 @@ static void gui_sheet_slide(Gui * const me, bool in)
  * A page that opens another over itself, and the way back, are taken over in
  * place (gui_sheet_fill_again_as()): the card stays on the glass and its rows
  * are written again. The new rows fade in over the old ones, in a folder's
- * time and easing (Luismi, 6-nov: no slide, by the criterion of the rest).
+ * time and easing (no slide, by the criterion of the rest).
  * Never from a circle, even on the way back to a page that stands on one: it
  * is already on the glass. Pictures that could not be taken cut it.
  *
@@ -5218,8 +5298,8 @@ static bool ui_build(Gui * const me)
                     "launcher's title stays left-aligned");
     }
 
-    /* THE EMPTY STATE STANDS AT KSHELL'S PLACES (kodediy/kode-dot-os,
-     * kshell_apps.c build_empty): the title at y KGUI_EMPTY_TITLE_Y, the
+    /* THE EMPTY STATE STANDS AT KSHELL'S PLACES (kshell_apps.c
+     * build_empty): the title at y KGUI_EMPTY_TITLE_Y, the
      * card at KGUI_EMPTY_CARD_Y and the address at KGUI_EMPTY_URL_Y. flex
      * offers only ONE pad_row per container, so the pad_row of both boxes is
      * zeroed and every gap is the child's own margin-top, worked out from
@@ -5595,8 +5675,9 @@ static bool ui_build(Gui * const me)
             kui_drag_set(&me->card_drag, true);
         }
     }
-    me->sheet     = GUI_SHEET_NONE;
-    me->sheet_row = -1;
+    me->sheet       = GUI_SHEET_NONE;
+    me->sheet_under = GUI_SHEET_NONE;
+    me->sheet_row   = -1;
 #if CONFIG_KODEOS_BLE_PAIRING_PASSKEY
     me->pair_live    = false;
     me->pair_hold    = false;
@@ -5715,7 +5796,7 @@ static bool gui_row_cut(Gui const * const me, int32_t cy, kgui_rail_t const *edg
 {
     /* KGUI_RAIL_TOP is the corner's business, for where a row is pushed in. A
      * whole row above it, the first of a full list, is a row like any other
-     * (Luismi, 5-nov: it could not be opened): only one the title or the glass
+     * (it could not be opened): only one the title or the glass
      * cuts is merely focused. */
     int32_t const top = ((uint8_t)GUI_LEVEL_GROUP == me->level) ? KGUI_BACKBAR_FOOT : 0;
 
@@ -5754,7 +5835,7 @@ static void on_pill_clicked(lv_event_t *e)
         KLOG_D(TAG, "tap on a list in flight: acts on nothing");
         return;
     }
-    if ( (0 <= idx) && (idx < (int32_t)l_gui.row_count) )
+    if ( (0 <= idx) && ((int32_t)l_gui.row_count > idx) )
     {
         kgui_rail_t edge;
         int32_t const cy = lv_obj_get_style_y(l_gui.list.box, LV_PART_MAIN)
@@ -5977,7 +6058,7 @@ static void gui_row_disc(Gui * const me, uint8_t row)
         const char * const name   = me->groups[r->idx].name;
         const lv_image_dsc_t * const art = kgui_folder_art(name);
         /* The light disc, with each folder's own drawing in Soft Black and a
-         * touch of Bold Yellow (Luismi, 5-nov). */
+         * touch of Bold Yellow. */
         lv_color_t const   ground = lv_color_hex(KUI_PALETTE_MEDIUM_GREY);
         lv_color_t const   ink    = KUI_COLOR_TEXT;
 
@@ -6013,7 +6094,7 @@ static void gui_row_disc(Gui * const me, uint8_t row)
         else
         {
             /* No picture: the app's colour or Medium Grey, with the first two
-             * letters of its name (Jorge, 2026-11-03). */
+             * letters of its name. */
             char mono[3];
 
             gui_mono_letters(face, mono);
@@ -6343,7 +6424,7 @@ static bool gui_list_tops(Gui const * const me)
  * @brief Where the first row's middle starts in a list that starts at the top.
  *
  * @param me The AO.
- * @return Below the shelf with one up (Luismi, 5-nov), else KGUI_LIST_FIRST_Y.
+ * @return Below the shelf with one up, else KGUI_LIST_FIRST_Y.
  */
 static float gui_list_first_y(Gui const * const me)
 {
@@ -6549,7 +6630,7 @@ static void gui_list_place(Gui * const me)
     {
         /* A root with a shelf has its first row on the focus line at rest,
          * the shelf one pitch above it. A list that fills the glass starts at
-         * its top (Luismi, 5-nov); a shorter one is a centred block. */
+         * its top; a shorter one is a centred block. */
         uint32_t const scroll_n = kgui_shelf_scroll_rows(me->row_count, gui_shelf_shown(me));
         float const   offset = gui_list_tops(me) ? kgui_rows_top_scroll_at(me->list_u, gui_list_first_y(me))
                                                  : kgui_rows_scroll(me->list_u, scroll_n);
@@ -7421,7 +7502,7 @@ static void gui_shelf_refresh(Gui * const me)
     {
         gui_shelf_dress(me, i);
     }
-    if ( me->shelf_sel >= (int8_t)n )
+    if ( (int8_t)n <= me->shelf_sel )
     {
         me->shelf_sel = -1;
         if ( 0U < n )
@@ -7448,7 +7529,7 @@ static void gui_shelf_refresh(Gui * const me)
     }
     /* The name a refresh may have renamed (a folder's fields landing). */
     if ( (NULL != me->shelf_label) && (0 <= me->shelf_label_at)
-        && (me->shelf_label_at < (int8_t)n) )
+        && ((int8_t)n > me->shelf_label_at) )
     {
         lv_label_set_text(me->shelf_label, gui_shelf_title(me, me->shelf_label_at));
     }
@@ -7555,7 +7636,7 @@ static void gui_shelf_side(Gui * const me, int8_t dir)
     int32_t       x;
     int32_t       y;
 
-    if ( (0 > next) || (next >= (int32_t)me->shelf_n) )
+    if ( (0 > next) || ((int32_t)me->shelf_n <= next) )
     {
         /* An end: the ring leans out and comes back, and the rubber's thud says so. */
         gui_shelf_nudge(me, dir);
@@ -8198,7 +8279,7 @@ static void gui_list_release(Gui * const me, TouchEvt const * const t)
 
     gui_list_limits(me, &lo, &hi);
     kui_drag_set(&me->list_finger, false);
-    me->list_low = gui_list_tops(me) && (me->list_u < (-gui_list_walk(me) / 2.0F));
+    me->list_low = gui_list_tops(me) && ((-gui_list_walk(me) / 2.0F) > me->list_u);
     if ( gui_list_block(me) )
     {
         KLOG_I(TAG, "gesture: block let go %d px off its place, %d px/s",
@@ -8438,7 +8519,7 @@ static void gui_sheet_land(Gui * const me)
     int32_t const to     = gui_scroll_top_of(me->sheet_body, me->sheet_rows,
                                              me->sheet_n, anchor);
 
-    if ( to != lv_obj_get_scroll_y(me->sheet_body) )
+    if ( lv_obj_get_scroll_y(me->sheet_body) != to )
     {
         /* The travel announces its own end, and that end is not a new
          * landing: LVGL's own animation is used here rather than this file's
@@ -8760,7 +8841,7 @@ static bool gui_in_card_header(Gui const * const me, int32_t x, int32_t y)
     int32_t const     depth = y - me->sheet_rest_y;
     bool              in    = false;
 
-    if ( (0 <= depth) && (depth < gui_card_head_foot(me)) )
+    if ( (0 <= depth) && (gui_card_head_foot(me) > depth) )
     {
         int32_t const up    = kui_glass_inset(&glass, depth);
         int32_t const down  = kui_glass_inset(&glass, (glass.h - 1) - depth);
@@ -8770,7 +8851,7 @@ static bool gui_in_card_header(Gui const * const me, int32_t x, int32_t y)
         {
             inset = down;
         }
-        in = (x >= inset) && (x < (glass.w - inset));
+        in = (x >= inset) && ((glass.w - inset) > x);
     }
     return in;
 }
@@ -8939,8 +9020,8 @@ static GuiTouchZone gui_gesture_zone(Gui * const me, int32_t x, int32_t y)
     {
         /* Down pulls Settings (from anywhere on the glass). A swipe left or
          * right opens Apps by that
-         * side (gui_side_lift()), and the way back mirrors it (Luismi,
-         * 4-nov). A swipe up is nothing. (A tap opens Apps too, but it is no
+         * side (gui_side_lift()), and the way back mirrors it. A swipe up
+         * is nothing. (A tap opens Apps too, but it is no
          * drag and has no zone here: gui_face_tap().) */
         zone.allowed = (uint8_t)(KUI_GESTURE_DIR_HORZ | KUI_GESTURE_DIR_DOWN);
         zone.horz    = GUI_KIND_APPS;
@@ -8964,8 +9045,8 @@ static GuiTouchZone gui_gesture_zone(Gui * const me, int32_t x, int32_t y)
                 /* Up and down move the list. */
                 zone.allowed = (uint8_t)(zone.allowed | KUI_GESTURE_DIR_VERT);
                 zone.vert    = GUI_KIND_SCROLL;
-                /* Down pulls Settings over Apps, and it goes back to Apps
-                 * (Luismi, 5-nov): from the top edge of the glass wherever the
+                /* Down pulls Settings over Apps, and it goes back to Apps:
+                 * from the top edge of the glass wherever the
                  * list stands, and from anywhere on it with a list that has
                  * nowhere lower to go. A finger on a row moves the list. */
                 if ( (KGUI_LIST_PULL_BAND > y) || gui_zone_lock_pull(me, y) )
@@ -9112,7 +9193,7 @@ static void gui_gesture_reland(Gui * const me, TouchEvt const * const t)
 {
     kui_gesture_state_t const s     = me->gest.state;
     bool const                edge  = (KGUI_SWIPE_EDGE_BAND > me->gest_land_y)
-                                      || (me->gest_land_y >= ((int32_t)KBSP_LCD_V_RES - KGUI_SWIPE_EDGE_BAND));
+                                      || (((int32_t)KBSP_LCD_V_RES - KGUI_SWIPE_EDGE_BAND) <= me->gest_land_y);
     int32_t                   dx    = t->x - me->gest_land_x;
     int32_t                   dy    = t->y - me->gest_land_y;
 
@@ -9430,7 +9511,7 @@ static void gui_level_change(Gui * const me)
     /* The rebuild waits for the tick: the change can come from the click of
      * the very row it deletes, and LVGL does not allow an object to be deleted
      * inside its own event. Then the new rows fade in where the old ones were
-     * (Luismi, 5-nov: no slide; the door the face takes). */
+     * (no slide; the door the face takes). */
     gui_list_finish(me);
     me->slide     = GUI_SLIDE_OUT;
     me->slide_x   = 0.0F;
@@ -9552,8 +9633,7 @@ static bool gui_level_back(Gui * const me, const char *source)
  */
 static void gui_level_home(Gui * const me)
 {
-    /* Apps opens on the rail, never on the shelf (Luismi has not approved
-     * the design's entry on the latest recent: DISENO.md, «Para Luismi»). */
+    /* Apps opens on the rail, never on the shelf. */
     gui_shelf_drop(me);
     if ( (uint8_t)GUI_LEVEL_GROUP == me->level )
     {
@@ -9763,7 +9843,7 @@ static bool gui_level_read(lv_obj_t const * const track, bool done, int32_t *pm,
     {
         rel = 0;
     }
-    if ( rel > (w - h) )
+    if ( (w - h) < rel )
     {
         rel = w - h;
     }
@@ -9974,7 +10054,7 @@ static const char *gui_icon_status_name(uint8_t st)
     static const char *const NAMES[] = { "ok", "none", "size", "path",
                                          "busy" };
 
-    return (st < (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])))
+    return ((uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) > st)
            ? NAMES[st] : "?";
 }
 
@@ -10618,7 +10698,7 @@ static bool gui_entry_is_app(Gui const * const me, uint8_t i)
     bool app = name_is_bin(me->entries[i].name);
 
     for ( uint32_t k = 0U;
-         app && (k < (sizeof(SYSTEM_IMAGES) / sizeof(SYSTEM_IMAGES[0])));
+         app && ((sizeof(SYSTEM_IMAGES) / sizeof(SYSTEM_IMAGES[0])) > k);
          ++k )
     {
         if ( strcasecmp(me->entries[i].name, SYSTEM_IMAGES[k]) == 0 )
@@ -10693,7 +10773,7 @@ static void gui_select(Gui * const me, int32_t idx)
         {
             pick = 0;
         }
-        else if ( pick >= (int32_t)me->row_count )
+        else if ( (int32_t)me->row_count <= pick )
         {
             pick = (int32_t)me->row_count - 1;
         }
@@ -12546,9 +12626,10 @@ static int8_t gui_sheet_card_row(Gui const * const me)
  * the row's own model, and how it is drawn is the module's. This AO owns the
  * state around it - which sheet is up, what the buttons mean on it, what the
  * pill is worth - and posts, like everything that reaches an owner. The details
- * have one answer, Remove, and only for an installed app; it asks on a card of
- * its own, then the app is taken off by AO_AppMgr (gui_remove_go()) while a
- * locked card waits for the list to say so.
+ * have one answer, Remove, for an installed app and for a file that names its
+ * project; it asks on a card of its own, then AO_AppMgr takes everything of the
+ * app off the board (gui_remove_go()) while a locked card waits for the erase
+ * to say how it ended (APP_ERASE_DONE_SIG).
  */
 
 /**
@@ -12584,24 +12665,89 @@ static uint32_t gui_row_size_of(Gui const * const me, GuiRow const * const r)
 }
 
 /**
- * @brief Whether a copy of an installed app's image stays on the SD card.
+ * @brief Whether the list shows a file of an app, on either medium.
  *
- * What the question before Remove may promise: the file the launcher lists
- * for the same project, on the card, is not touched by the erase.
+ * What the question before Remove says goes too: the erase deletes every
+ * image file of the project, on the card and on the internal partition.
  *
  * @param me      The AO.
- * @param project The installed app's project name.
- * @return true when a listed file of that project is on the card.
+ * @param project The app's project name.
+ * @return true when a listed file is of that project.
  */
-static bool gui_remove_copy_stays(Gui const * const me, const char *project)
+static bool gui_remove_has_files(Gui const * const me, const char *project)
 {
-    bool stays = false;
+    bool found = false;
 
-    for ( uint8_t i = 0U; (i < me->entry_count) && !stays; ++i )
+    for ( uint8_t i = 0U; (i < me->entry_count) && !found; ++i )
     {
-        stays = me->entries[i].from_sd && (strcmp(me->entries[i].project, project) == 0);
+        found = (strcmp(me->entries[i].project, project) == 0);
     }
-    return stays;
+    return found;
+}
+
+/**
+ * @brief Whether Remove has something to name for a row.
+ *
+ * An installed app by its project name; a file that is not installed by the
+ * project its descriptor names, which is what the erase matches files by. A
+ * file that names none has no Remove.
+ *
+ * @param me The AO.
+ * @param r  The row: which model, and where in it.
+ * @return true when the row can be removed.
+ */
+static bool gui_row_removable(Gui const * const me, GuiRow const * const r)
+{
+    bool removable = false;
+
+    if ( GUI_ROW_INSTALLED == r->kind )
+    {
+        removable = true;
+    }
+    else if ( GUI_ROW_FILE == r->kind )
+    {
+        removable = ('\0' != me->entries[r->idx].project[0]);
+    }
+    else
+    {
+        /* A kind with no app behind it. */
+    }
+    return removable;
+}
+
+/**
+ * @brief Keep what the Remove cards say and what the erase names, from a row.
+ *
+ * @param me The AO.
+ * @param r  The row the details are about.
+ * @return true when the row can be removed and its names are kept.
+ */
+static bool gui_remove_name(Gui * const me, GuiRow const * const r)
+{
+    const char *project = NULL;
+
+    if ( GUI_ROW_INSTALLED == r->kind )
+    {
+        if ( gui_installed_has(me, me->installed[r->idx].name) )
+        {
+            project = me->installed[r->idx].name;
+        }
+    }
+    else if ( gui_row_removable(me, r) )
+    {
+        project = me->entries[r->idx].project;
+    }
+    else
+    {
+        /* Nothing to name. */
+    }
+    if ( NULL != project )
+    {
+        me->rm_installed = (GUI_ROW_INSTALLED == r->kind);
+        (void)snprintf(me->rm_name, sizeof(me->rm_name), "%s", project);
+        (void)snprintf(me->rm_label, sizeof(me->rm_label), "%s", gui_row_face_of(me, r)->name);
+    }
+    return NULL != project;
 }
 
 /**
@@ -12728,6 +12874,7 @@ static void gui_details_fill(Gui * const me)
         lv_color_t const      ground = gui_light_ground(face);
         kgui_details_spec_t   spec;
         char                  mono[3];
+        char                  own[KGUI_GROUP_NAME_MAX];
         char                  group[KGUI_GROUP_NAME_MAX];
         char                  meta[KGUI_DTEXT_META_MAX];
         char                  size[KGUI_DTEXT_SIZE_MAX];
@@ -12744,7 +12891,12 @@ static void gui_details_fill(Gui * const me)
         }
         gui_mono_letters(face, mono);
         spec.mono = mono;
-        kgui_group_title(face->category, group);
+        /* All is where every app is, not a category to say of one. */
+        group[0] = '\0';
+        if ( kgui_group_of(face->category, own) && (strcmp(own, KGUI_GROUP_ALL) != 0) )
+        {
+            kgui_group_title(own, group);
+        }
         kgui_dtext_meta(face->version, group, meta, sizeof(meta));
         kgui_dtext_size(gui_row_size_of(me, r), size, sizeof(size));
         built[0] = '\0';
@@ -12757,14 +12909,14 @@ static void gui_details_fill(Gui * const me)
         spec.size        = size;
         spec.built       = built;
         spec.description = face->description;
-        spec.removable   = (GUI_ROW_INSTALLED == r->kind);
+        spec.removable   = gui_row_removable(me, r);
         kgui_details_info(&spec);
         kgui_details_ring(me->pad);
     }
 }
 
 /**
- * @brief Write the question before Remove: who, and what stays.
+ * @brief Write the question before Remove: who, and what goes with it.
  *
  * @param me The AO.
  */
@@ -12779,7 +12931,7 @@ static void gui_remove_fill(Gui * const me)
         gui_sheet_close(me);
         return;
     }
-    kgui_details_ask(me->rm_label, gui_remove_copy_stays(me, me->rm_name));
+    kgui_details_ask(me->rm_label, gui_remove_has_files(me, me->rm_name));
     kgui_details_ring(me->pad);
 }
 
@@ -12798,7 +12950,7 @@ static void gui_removing_fill(Gui * const me)
         return;
     }
     /* NOTHING TO PRESS, and the card is what enforces it: no pad and no tap
-     * until the list says the app is gone, or the wait runs out. */
+     * until AO_AppMgr says the erase ended, or the wait runs out. */
     me->sheet_locked = true;
     kgui_details_wait(me->rm_label);
 }
@@ -12806,8 +12958,8 @@ static void gui_removing_fill(Gui * const me)
 /**
  * @brief The pill was pressed: the details ask, or the question is answered.
  *
- * On the details, an installed app's name is kept and the card turns into
- * the question; on the question, the erase goes (gui_remove_go()).
+ * On the details, the row's names are kept (gui_remove_name()) and the card
+ * turns into the question; on the question, the erase goes (gui_remove_go()).
  *
  * @param me The AO.
  */
@@ -12817,17 +12969,21 @@ static void gui_details_act(Gui * const me)
     {
         KLOG_D(TAG, "remove: an answer is on its way; this one is ignored");
     }
+    else if ( me->rm_out )
+    {
+        /* ONE ERASE AT A TIME: the end of the one that is out is awaited by
+         * the names kept for it (a card left with home does not end it), and
+         * AO_AppMgr would refuse a second while it works. */
+        KLOG_N(TAG, "remove: the erase of %s is still out; this one is refused", me->rm_name);
+        kgui_hint(kgui_dtext_remove_end((uint8_t)KODE_DENIED));
+    }
     else if ( GUI_SHEET_DETAILS == me->sheet )
     {
         GuiRow target = { GUI_ROW_INSTALLED, 0U, 0U };
         int8_t row    = -1;
 
-        if ( gui_details_target(me, &target, &row) && (GUI_ROW_INSTALLED == target.kind)
-            && gui_installed_has(me, me->installed[target.idx].name) )
+        if ( gui_details_target(me, &target, &row) && gui_remove_name(me, &target) )
         {
-            (void)snprintf(me->rm_name, sizeof(me->rm_name), "%s", me->installed[target.idx].name);
-            (void)snprintf(me->rm_label, sizeof(me->rm_label), "%s",
-                           me->installed[target.idx].face.name);
             (void)kgui_haptic_play(KGUI_HAPTIC_CLICK);
             me->rm_busy = true;
             gui_sheet_open_kind(me, GUI_SHEET_REMOVE);
@@ -12839,7 +12995,7 @@ static void gui_details_act(Gui * const me)
         {
             KLOG_D(TAG, "remove: the question takes no answer yet");
         }
-        else if ( !gui_installed_has(me, me->rm_name) )
+        else if ( me->rm_installed && !gui_installed_has(me, me->rm_name) )
         {
             /* The app left while the question stood (the console, another
              * write): there is nothing to erase, and the question goes as
@@ -12847,7 +13003,7 @@ static void gui_details_act(Gui * const me)
             KLOG_N(TAG, "remove: %s had already left the list; nothing is asked",
                    me->rm_name);
             me->rm_since_ms = khal_time_ms();
-            gui_remove_done(me, true);
+            gui_remove_done(me, (uint8_t)KODE_OK);
         }
         else
         {
@@ -12863,12 +13019,12 @@ static void gui_details_act(Gui * const me)
 }
 
 /**
- * @brief The question is answered yes: AO_AppMgr is asked to erase the app,
- *        the apps are asked about again, and the card turns into the wait.
+ * @brief The question is answered yes: AO_AppMgr is asked to take everything
+ *        of the app off the board, and the card turns into the wait.
  *
- * AO_AppMgr does not answer an erase, so the list is what says it happened:
- * gui_remove_tick() watches it. The erase is posted before the question about
- * the apps, to the same queue, so the answer follows it.
+ * AO_AppMgr publishes the end of every erase (APP_ERASE_DONE_SIG), a refusal
+ * included: gui_remove_ended() takes the one that names this app, and
+ * gui_remove_tick() bounds the wait for it.
  *
  * @param me The AO.
  */
@@ -12877,75 +13033,156 @@ static void gui_remove_go(Gui * const me)
     KLOG_N(TAG, "remove: %s asked of AO_AppMgr", me->rm_name);
     appmgr_erase_request(me->rm_name);
     me->rm_since_ms = khal_time_ms();
-    me->rm_poll_ms  = me->rm_since_ms;
-    gui_request_installed(me);
+    me->rm_out      = true;
     gui_sheet_open_kind(me, GUI_SHEET_REMOVING);
 }
 
 /**
- * @brief The wait is over: the card goes, and the launcher says what happened.
+ * @brief Whether kgui/last names an app: its project, or a file of it the
+ *        list shows.
  *
- * @param me   The AO.
- * @param gone true when the app has left the list.
+ * @param me      The AO.
+ * @param last    What kgui/last holds.
+ * @param project The app's project name.
+ * @return true when the row launched last is that app's.
  */
-static void gui_remove_done(Gui * const me, bool gone)
+static bool gui_last_is_of(Gui const * const me, const char *last, const char *project)
 {
+    bool is_of = (strcmp(last, project) == 0);
+
+    for ( uint8_t i = 0U; (i < me->entry_count) && !is_of; ++i )
+    {
+        is_of = (strcmp(me->entries[i].name, last) == 0)
+                && (strcmp(me->entries[i].project, project) == 0);
+    }
+    return is_of;
+}
+
+/**
+ * @brief Forget an app that has left the board: kgui/last when it names it,
+ *        and its place in the recents.
+ *
+ * A store that refuses leaves a name no row answers to, which the next boot
+ * reads as no row at all.
+ *
+ * @param me      The AO.
+ * @param project The project name of the app that left.
+ */
+static void gui_forget_app(Gui * const me, const char *project)
+{
+    char last[KODE_APP_FILE_MAX];
+
+    if ( (khal_nvs_get_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_LAST, last, sizeof(last)) == KODE_OK)
+        && gui_last_is_of(me, last, project) )
+    {
+        if ( khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_LAST) != KODE_OK )
+        {
+            KLOG_W(TAG, "the store refused to forget kgui/%s", GUI_NVS_KEY_LAST);
+        }
+    }
+    if ( kgui_recents_drop(me->recents, project) )
+    {
+        if ( khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_RECENTS, me->recents) != KODE_OK )
+        {
+            KLOG_W(TAG, "the store refused kgui/%s", GUI_NVS_KEY_RECENTS);
+        }
+    }
+}
+
+/**
+ * @brief The wait is over: the card goes, the launcher says how the erase
+ *        ended, and the lists are asked again.
+ *
+ * An erase that left nothing is said by the notice that names the app; any
+ * other end by a hint (kgui_dtext_remove_end()). The files and the apps are
+ * asked about again either way, so the rows are what the media hold now.
+ *
+ * @param me     The AO.
+ * @param status How the erase ended: AppEraseDoneEvt.status, or KODE_TIMEOUT
+ *               when no end came.
+ */
+static void gui_remove_done(Gui * const me, uint8_t status)
+{
+    const char * const words = kgui_dtext_remove_end(status);
+
     me->sheet_locked = false;
     me->rm_busy      = false;
-    if ( gone )
+    me->rm_out       = false;
+    if ( NULL == words )
     {
-        char t[48];
+        char t[GUI_NOTICE_BYTES];
 
-        KLOG_N(TAG, "remove: %s left the list after %u ms", me->rm_name,
+        KLOG_N(TAG, "remove: %s left the board after %u ms", me->rm_name,
                (unsigned)(khal_time_ms() - me->rm_since_ms));
         (void)snprintf(t, sizeof(t), "%.32s was removed", me->rm_label);
         gui_visit(me, GUI_VISIT_NOTICE, t);
     }
     else
     {
-        KLOG_W(TAG, "remove: %s is still listed after %u ms; nothing else was erased",
-               me->rm_name, (unsigned)GUI_REMOVE_WAIT_MS);
-        kgui_hint(GUI_HINT_REMOVE_FAILED);
+        KLOG_W(TAG, "remove: the erase of %s ended with code %u after %u ms: %s",
+               me->rm_name, (unsigned)status,
+               (unsigned)(khal_time_ms() - me->rm_since_ms), words);
+        kgui_hint(words);
     }
-    gui_sheet_close(me);
+    gui_request_list(me);
+    gui_request_installed(me);
+    if ( (GUI_SHEET_REMOVING == me->sheet) || (GUI_SHEET_REMOVE == me->sheet) )
+    {
+        gui_sheet_close(me);
+    }
 }
 
 /**
- * @brief The Removing card's share of the tick.
+ * @brief AO_AppMgr says an erase ended: this launcher's, or somebody else's.
  *
- * Done when a finished round of the apps no longer lists the app, or when
- * GUI_REMOVE_WAIT_MS has passed. While it is still listed, the apps are asked
- * again every GUI_REMOVE_POLL_MS - when no round is out, or when the one that
- * is out has had no answer for that long: AO_AppMgr ignores a list request
- * while it writes, and a round that never came must not leave the card
- * waiting for it.
+ * Whoever asked, an app that left the board is forgotten here too
+ * (gui_forget_app()). The cards and the rescan are only for the erase this
+ * launcher asked for, by the name it gave.
+ *
+ * @param me The AO.
+ * @param d  The end of the erase.
+ */
+static void gui_remove_ended(Gui * const me, AppEraseDoneEvt const * const d)
+{
+    bool const mine = me->rm_out && (strcmp(d->name, me->rm_name) == 0);
+
+    if ( ((uint8_t)KODE_OK == d->status) || ((uint8_t)KODE_IO_ERROR == d->status) )
+    {
+        gui_forget_app(me, d->name);
+    }
+    if ( mine )
+    {
+        const char *image = "none";
+        const char *card  = "absent";
+
+        if ( d->image )
+        {
+            image = "removed";
+        }
+        if ( d->sd.present )
+        {
+            card = "there";
+        }
+        KLOG_N(TAG, "remove: %s: image %s; partition %u gone, %u left; card %s, %u gone, %u left",
+               d->name, image, (unsigned)d->fs.files, (unsigned)d->fs.left,
+               card, (unsigned)d->sd.files, (unsigned)d->sd.left);
+        gui_remove_done(me, d->status);
+    }
+}
+
+/**
+ * @brief The Remove's share of the tick: the bound on the wait for its end.
+ *
+ * AO_AppMgr answers every erase; GUI_REMOVE_WAIT_MS is past the longest it
+ * waits for AO_Storage, so reaching it means the end was lost.
  *
  * @param me The AO.
  */
 static void gui_remove_tick(Gui * const me)
 {
-    if ( GUI_SHEET_REMOVING == me->sheet )
+    if ( me->rm_out && ((khal_time_ms() - me->rm_since_ms) >= GUI_REMOVE_WAIT_MS) )
     {
-        uint32_t const now = khal_time_ms();
-
-        if ( !me->apps_out && !gui_installed_has(me, me->rm_name) )
-        {
-            gui_remove_done(me, true);
-        }
-        else if ( (now - me->rm_since_ms) >= GUI_REMOVE_WAIT_MS )
-        {
-            gui_remove_done(me, false);
-        }
-        else if ( ((now - me->rm_poll_ms) >= GUI_REMOVE_POLL_MS)
-                 && (!me->apps_out || ((now - me->list_out_ms) >= GUI_REMOVE_POLL_MS)) )
-        {
-            me->rm_poll_ms = now;
-            gui_request_installed(me);
-        }
-        else
-        {
-            /* Waiting for the round that is out. */
-        }
+        gui_remove_done(me, (uint8_t)KODE_TIMEOUT);
     }
 }
 
@@ -13487,7 +13724,7 @@ static void gui_launch_end(void)
 
 /**
  * @brief Back while the scene flies: out to where it began, at once, and
- *        nothing runs (Luismi, 5-nov).
+ *        nothing runs.
  *
  * Until the run is asked for, which is the end of the fade: past that the
  * board is on its way and nothing calls it back. The press is spent here, so
@@ -13793,7 +14030,7 @@ static void gui_evict_end(Gui * const me, AppEvictEndEvt const * const e)
     }
     else
     {
-        /* Room is made and nobody is asked (Luismi, 5-nov: it loads, and that
+        /* Room is made and nobody is asked (it loads, and that
          * is it). AO_AppMgr keeps what goes on the card first; a copy that
          * fails stops the install with nothing removed (KFAIL_KEEP). */
         KLOG_N(TAG, "install: %u app(s) make room for %s", (unsigned)e->victims,
@@ -14226,18 +14463,14 @@ static void gui_stopped_run(Gui * const me)
  */
 static void gui_battery_fill(Gui * const me)
 {
-    char        sub[GUI_CRIT_SUB_MAX];
-    const char *line = KGUI_CRIT_PLUG;
+    char sub[GUI_CRIT_SUB_MAX];
 
     me->sheet_locked = false;
-    if ( me->vbus )
-    {
-        line = KGUI_CRIT_PLUGGED;
-    }
     (void)snprintf(sub, sizeof(sub), "%s, %u %%", KGUI_CRIT_SUB, (unsigned)me->soc);
     gui_frame_begin(me);
     kgui_sys_pile(&me->sys);
-    kgui_sys_text(&me->sys, KGUI_SYS_ROOM_TOP, KGUI_SYS_ROOM_END, KGUI_CRIT_TITLE, sub, line);
+    kgui_sys_text(&me->sys, KGUI_SYS_ROOM_TOP, KGUI_SYS_ROOM_END, KGUI_CRIT_TITLE, sub,
+                  KGUI_CRIT_PLUG);
 }
 
 /**
@@ -14248,15 +14481,15 @@ static void gui_battery_fill(Gui * const me)
  * another system card (it would take the pairing's code or a question away),
  * while a guided test has the glass, or while the board rests with the glass
  * parked; the reading or the wake that finds the way clear raises it, because
- * the entry is only counted once it has risen.
+ * the entry is only counted once it has risen. Nor is it raised while the
+ * cable is in: it asks for the cable.
  *
  * @param me       The AO, with the reading already copied.
  * @param critical Whether the reading is critical.
- * @param charging Whether the cell is charging.
  */
-static void gui_battery_check(Gui * const me, bool critical, bool charging)
+static void gui_battery_check(Gui * const me, bool critical)
 {
-    if ( kgui_crit_due(&me->crit, critical, charging, me->soc) )
+    if ( kgui_crit_due(&me->crit, critical, me->vbus, me->soc) )
     {
         bool parked = false;
 
@@ -14407,9 +14640,9 @@ static void gui_return_check(Gui * const me)
 /**
  * @brief Put the list where the app left it: its group, and the rows.
  *
- * The launcher opens the group the app is filed under (kgui_group_of()), or
- * stays at the root for an app that is in none; the selection lands on the app
- * by its name: the one that ran (gui_last_follow_offset()), or kgui/last when
+ * The launcher opens the group the app is filed under (kgui_group_of()):
+ * its first category's, or All for an app with none; the selection lands on
+ * the app by its name: the one that ran (gui_last_follow_offset()), or kgui/last when
  * no installed app sits at the offset (gui_last_load()). The root keeps the
  * group's row as its selection, so going back lands on it.
  *
@@ -14778,6 +15011,16 @@ static void gui_write_send(Gui * const me)
         case GUI_ASK_OS: {
             appmgr_image_request((uint8_t)KFW_SRC_SD, GUI_OS_IMAGE,
                                  (uint8_t)KFW_TARGET_OS, false);
+            break;
+        }
+        case GUI_ASK_OS_NET: {
+            /* The link the service named: AO_AppMgr streams it into the
+             * inactive slot as `install src="https://..." dst=os` does. */
+            if ( NULL != me->os )
+            {
+                appmgr_image_request((uint8_t)KFW_SRC_HTTP, me->os->rel.url,
+                                     (uint8_t)KFW_TARGET_OS, false);
+            }
             break;
         }
         default: {
@@ -15260,9 +15503,9 @@ static void gui_show_test_step(const ButtonsTestEvt *t)
  * button means what, because the pad is the answer and this is the only
  * place on the unit that can say so.
  *
- * The `display` row has no twin of this: AO_Display drops every flush while
- * that row owns the glass, so nothing written here would be seen. The glass
- * carries the colour and the console carries the question.
+ * The `display` row has its line once, before its first field
+ * (gui_show_display_intro()): from then on AO_Display drops every flush, the
+ * glass carries the colour and the console carries the question.
  *
  * @param t The step AO_LedMgr is reporting.
  */
@@ -15297,6 +15540,19 @@ static void gui_show_led_step(const LedTestEvt *t)
     }
     line[GUI_LOADING_LINE_MAX] = '\0';
     lv_subject_set_string(kgui_subject_loading_text, line);
+}
+
+/**
+ * @brief Say what the `display` row's fields will ask, before the first.
+ *
+ * The fields carry no words and the glass is AO_Display's while they are up,
+ * so this is said once, on the screen the row opens on (DISPLAY_TEST_INTRO).
+ * TOP starts the fields; left alone they start by themselves.
+ */
+static void gui_show_display_intro(void)
+{
+    lv_subject_set_string(kgui_subject_loading_text,
+                          "Five colours next\nEven? TOP yes - BOT no");
 }
 
 /**
@@ -15419,7 +15675,7 @@ static void gui_ring_visible(bool shown)
     {
         opa = LV_OPA_COVER;
     }
-    for ( size_t i = 0U; i < (sizeof(rings) / sizeof(rings[0])); i++ )
+    for ( size_t i = 0U; (sizeof(rings) / sizeof(rings[0])) > i; i++ )
     {
         lv_style_set_outline_opa(rings[i], opa);
         lv_obj_report_style_change(rings[i]);
@@ -17646,7 +17902,7 @@ static QState gui_card_land(Gui * const me, QStateHandler home)
     {
         KLOG_D(TAG, "card: landed down; %s closes",
                gui_sheet_kind_name(me->sheet));
-        if ( gui_sheet_list_page(me, me->sheet) == NULL )
+        if ( gui_sheet_back_page(me, home) == NULL )
         {
             me->sheet_cut = true;
         }
@@ -18054,7 +18310,7 @@ static void gui_off_fill(Gui * const me)
     kgui_sys_text(&me->sys, KGUI_SYS_ROOM_TOP, KGUI_SYS_ROOM_END, NULL, NULL, NULL);
     if ( me->vbus )
     {
-        /* Luismi, 4-nov: on the cable it cannot turn off, so the card is
+        /* On the cable it cannot turn off, so the card is
          * only the message, large and centred, with no power glyph, and its
          * one button is OK, which closes it. */
         role = GUI_ACT_PRIMARY;
@@ -18064,7 +18320,7 @@ static void gui_off_fill(Gui * const me)
     else
     {
         /* The big red power glyph and the Turn off button say it all: no
-         * title and no caption (Luismi, 4-nov), larger and a little above the
+         * title and no caption, larger and a little above the
          * middle (5-nov). */
         kgui_sys_message(&me->sys, NULL);
         kgui_sys_glyph_mid(&me->sys, &kgui_glyph_power_180, KUI_COLOR_DANGER);
@@ -18728,7 +18984,7 @@ static const char *gui_haptic_quiet_word(void)
     uint8_t const mask = kgui_haptic_quiet_mask();
     const char   *word = "nothing";
 
-    if ( mask == (uint8_t)(KGUI_HAPTIC_QUIET_MIC | KGUI_HAPTIC_QUIET_IMU) )
+    if ( (uint8_t)(KGUI_HAPTIC_QUIET_MIC | KGUI_HAPTIC_QUIET_IMU) == mask )
     {
         word = "both";
     }
@@ -18927,7 +19183,7 @@ static bool gui_color_reads(lv_color_t c)
         hi = lo;
         lo = swap;
     }
-    return hi >= (GUI_LIGHT_MIN_CONTRAST * lo);
+    return (GUI_LIGHT_MIN_CONTRAST * lo) <= hi;
 }
 
 /**
@@ -19078,7 +19334,7 @@ static void gui_sheet_clear(Gui * const me)
     lv_obj_scroll_to_y(me->sheet_card, 0, LV_ANIM_OFF);
 
     for ( uint8_t i = 0U;
-         i < (uint8_t)(sizeof(SAID) / sizeof(SAID[0])); ++i )
+         (uint8_t)(sizeof(SAID) / sizeof(SAID[0])) > i; ++i )
     {
         gui_sheet_say(me, SAID[i], "");
     }
@@ -19163,7 +19419,7 @@ static void gui_sheet_lines_centre(Gui const * const me, bool centre)
 {
     static const char *const LINES[] = { "line1", "line2", "line3" };
 
-    for ( uint8_t i = 0U; i < (uint8_t)(sizeof(LINES) / sizeof(LINES[0])); ++i )
+    for ( uint8_t i = 0U; (uint8_t)(sizeof(LINES) / sizeof(LINES[0])) > i; ++i )
     {
         lv_obj_t * const lbl = lv_obj_find_by_name(me->sheet_card, LINES[i]);
 
@@ -19239,7 +19495,7 @@ static void gui_sheet_line_y(Gui const * const me, int32_t first_y)
 {
     static const char *const LINES[] = { "line1", "line2", "line3" };
 
-    for ( uint8_t i = 0U; i < (uint8_t)(sizeof(LINES) / sizeof(LINES[0])); ++i )
+    for ( uint8_t i = 0U; (uint8_t)(sizeof(LINES) / sizeof(LINES[0])) > i; ++i )
     {
         lv_obj_t * const lbl = lv_obj_find_by_name(me->sheet_card, LINES[i]);
 
@@ -19443,7 +19699,7 @@ static void gui_sheet_action_act(Gui * const me)
             if ( me->vbus )
             {
                 /* On the cable the card only says why it cannot: its OK
-                 * closes it (Luismi, 4-nov). */
+                 * closes it. */
                 KLOG_N(TAG, "turn off: on the cable; OK closes the card");
                 gui_sheet_close(me);
                 break;
@@ -19561,7 +19817,7 @@ static void gui_sheet_header_tint(Gui const * const me, lv_color_t ink)
 }
 
 /**
- * @brief A settings page's title and its arrow back (Luismi, 5-nov).
+ * @brief A settings page's title and its arrow back.
  *
  * On the card, over the body: it stays at the top and the rows pass under it.
  *
@@ -19878,7 +20134,7 @@ static lv_obj_t *gui_sheet_row_core(Gui * const me, const char *name,
  * name and a value, a row every 104 px, the focused row always at y 215. The
  * body is padded so row 0 and the last row can both reach that height. The
  * rows stand at one x, a flat list, and fade near the clip's edges
- * (gui_rail_follow()). The look is kodediy/kode-dot-os, kshell_rail.c.
+ * (gui_rail_follow()). The look is kshell's, kshell_rail.c.
  */
 
 /** @brief What the sheet's header is when it is the kit's, kept to put it back. */
@@ -19956,7 +20212,7 @@ static void gui_sheet_page_dress(Gui * const me)
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_set_x(me->sheet_body, 0);
         /* The rows go out by the glass's own edges, not by a square frame
-         * inside it (Luismi, 5-nov): the body runs to the glass, and what
+         * inside it: the body runs to the glass, and what
          * was its margin is padding. Under a pinned switch it starts at the
          * switch, for the rows to pass beneath it. */
         lv_obj_set_y(me->sheet_body, gui_sheet_pins(me->sheet) ? KGUI_PAGE_BODY_Y : 0);
@@ -19967,7 +20223,7 @@ static void gui_sheet_page_dress(Gui * const me)
         /* kshell's rail ends (kshell_rail.c rail_offset()): row 0 starts at
          * the top of the page with the ring on it, and the last row ends at
          * its foot, so a page never opens on a black third (ui-dot 06). The
-         * Wi-Fi and Bluetooth pages have no header either (Luismi, 4-nov: no
+         * Wi-Fi and Bluetooth pages have no header either (no
          * titles at the top): their switch stands pinned at that same top
          * (gui_sheet_pin_first()), in the room the padding keeps for it, and
          * the list scrolls under it. */
@@ -20708,7 +20964,7 @@ static void gui_sheet_ring_at(Gui * const me, uint8_t slot)
      * gui_sheet_land()'s reason. */
     lv_obj_update_layout(me->sheet_body);
     to = gui_scroll_top_of(me->sheet_body, me->sheet_rows, me->sheet_n, top);
-    if ( to != lv_obj_get_scroll_y(me->sheet_body) )
+    if ( lv_obj_get_scroll_y(me->sheet_body) != to )
     {
         /* Ours as well: the scroll end this brings is not a finger's to
          * land, and it stands on the row grid already. */
@@ -20840,12 +21096,12 @@ static const GuiWriteWords *gui_write_words(uint8_t what)
               "card from apps.kode.diy." },
         },
         [KWRITE_APP_RUN] = {
-            NULL, NULL, "Didn't open",   /* Luismi, 5-nov: no word, it is obviously loading */
+            NULL, NULL, "Didn't open",   /* No word, it is obviously loading */
             { "The file is missing", "or damaged. Copy it to the",
               "card from apps.kode.diy." },
         },
         [KWRITE_OS] = {
-            NULL, NULL, "Didn't update",   /* Luismi, 5-nov: it adds nothing */
+            NULL, NULL, "Didn't update",   /* It adds nothing */
             { "Nothing changed.", "kodeOS keeps running", "the version it had." },
         },
         [KWRITE_C5] = {
@@ -20856,7 +21112,7 @@ static const GuiWriteWords *gui_write_words(uint8_t what)
 
     uint8_t pick = what;
 
-    if ( pick >= (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) )
+    if ( (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) <= pick )
     {
         pick = (uint8_t)KWRITE_APP_RUN;
     }
@@ -20879,9 +21135,9 @@ static void gui_lines_join(char *out, size_t size, const char *l1, const char *l
     size_t used = 0U;
 
     out[0] = '\0';
-    for ( size_t i = 0U; i < (sizeof(lines) / sizeof(lines[0])); ++i )
+    for ( size_t i = 0U; (sizeof(lines) / sizeof(lines[0])) > i; ++i )
     {
-        if ( (NULL != lines[i]) && ('\0' != lines[i][0]) && (used < (size - 1U)) )
+        if ( (NULL != lines[i]) && ('\0' != lines[i][0]) && ((size - 1U) > used) )
         {
             const char *sep = "";
             int         n;
@@ -20894,7 +21150,7 @@ static void gui_lines_join(char *out, size_t size, const char *l1, const char *l
             if ( 0 < n )
             {
                 used += (size_t)n;
-                if ( used > (size - 1U) )
+                if ( (size - 1U) < used )
                 {
                     used = size - 1U;
                 }
@@ -20949,7 +21205,7 @@ static void gui_sheet_header_show(Gui const * const me, bool show)
 {
     static const char *const NAMES[] = { "handle", "hdr_disc" };
 
-    for ( uint8_t i = 0U; i < (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])); ++i )
+    for ( uint8_t i = 0U; (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) > i; ++i )
     {
         lv_obj_t * const obj = lv_obj_find_by_name(me->sheet_card, NAMES[i]);
 
@@ -21102,9 +21358,9 @@ static void gui_opening_progress(Gui * const me)
     }
     kgui_sys_figure(&me->sys, shown);
     kgui_sys_hero(&me->sys, gui_write_name(me, gui_sheet_card_row(me)), second);
-    /* What is on the glass, centred on it (Luismi, 5-nov): kodeOS's word and
+    /* What is on the glass, centred on it: kodeOS's word and
      * figure run from y 84 to 288, an app's disc, figure and name from 52 to 384,
-     * and with a line under them to 424, with room between them (Luismi, 5-nov). */
+     * and with a line under them to 424, with room between them. */
     if ( (uint8_t)KWRITE_OS == me->write_what )
     {
         kgui_sys_lift(&me->sys, GUI_WRITE_LIFT_OS);
@@ -21118,7 +21374,7 @@ static void gui_opening_progress(Gui * const me)
         kgui_sys_lift(&me->sys, GUI_WRITE_LIFT_LINE);
     }
     /* No note under it: the loading screen is the app, its name, the figure
-     * and the edge, and nothing more (Luismi, 4-nov: loading screens as
+     * and the edge, and nothing more (loading screens as
      * simple as they can be). */
     kgui_sys_note(&me->sys, NULL);
 }
@@ -21354,8 +21610,8 @@ static void gui_sheet_fill(Gui * const me)
         case GUI_SHEET_DETAILS: {
             /* THE ROW, READ OUT: the face it wears, what it calls itself and
              * the line it declared. Its one answer is Remove, the pad's top
-             * button and a tap on the glass alike, for an installed app
-             * only; it stands on the card as the module's own pill, not as
+             * button and a tap on the glass alike, for an installed app and
+             * for a file that names its project; it stands on the card as the module's own pill, not as
              * the kit's button (gui_details_fill()). */
             gui_details_fill(me);
             break;
@@ -21366,7 +21622,7 @@ static void gui_sheet_fill(Gui * const me)
             break;
         }
         case GUI_SHEET_REMOVING: {
-            /* THE WAIT while the app leaves the list (gui_removing_fill()). */
+            /* THE WAIT while the app leaves the board (gui_removing_fill()). */
             gui_removing_fill(me);
             break;
         }
@@ -21486,7 +21742,7 @@ static void gui_sheet_fill_again(Gui * const me)
 #endif
     /* The same list, new words: it stays where it stood. Selecting here took
      * it to the focus line again, an animation on every toggle and on every
-     * scan's answer (Luismi, 5-nov). */
+     * scan's answer. */
     if ( gui_sheet_mark(me, want) && (NULL != me->sheet_body) )
     {
         lv_obj_update_layout(me->sheet_body);
@@ -21568,7 +21824,6 @@ static bool gui_sheet_row_acts(Gui const * const me, uint16_t tag)
         }
         case GUI_SHEET_BLE: {
             acts = ((uint16_t)GUI_TAG_BLE_SWITCH == tag)
-                   || ((uint16_t)GUI_TAG_BLE_NAME == tag)
                    || ((uint16_t)GUI_TAG_BLE_PAIR == tag)
                    || ((uint16_t)GUI_TAG_BLE_FORGET == tag);
             break;
@@ -21592,7 +21847,7 @@ static bool gui_sheet_row_acts(Gui const * const me, uint16_t tag)
             /* The doors act; every other row of the flat list changes where
              * it stands and clicks after the change (gui_screen_act()). */
             acts = ((uint16_t)GUI_TAG_MORE <= tag)
-                   && (tag < ((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT));
+                   && (((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT) > tag);
             break;
         }
         case GUI_SHEET_ZONE:
@@ -21679,7 +21934,7 @@ static void gui_sheet_act(Gui * const me, uint8_t idx, int8_t step)
                 gui_sheet_level_step(me, idx, step);
             }
             else if ( ((uint16_t)GUI_TAG_MORE <= tag)
-                     && (tag < ((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT)) )
+                     && (((uint16_t)GUI_TAG_MORE + (uint16_t)GUI_MORE_COUNT) > tag) )
             {
                 if ( 0 == step )
                 {
@@ -21896,6 +22151,73 @@ static bool gui_vol_send(bool set, uint8_t pct)
 static void gui_vol_ask(void)
 {
     (void)gui_vol_send(false, 0U);
+}
+
+/**
+ * @brief Ask AO_LowPower for the `off_after` setting: read it, or set and
+ *        store it.
+ *
+ * The same door as the volume's (gui_vol_send()). A set names the word by
+ * its place in the owner's list, as the console's does.
+ *
+ * @param set true to set the word at @p at; false to only read.
+ * @param at  The word's place in the owner's list.
+ * @return true when the request is posted.
+ */
+static bool gui_off_after_send(bool set, uint8_t at)
+{
+    KodeConfigReqEvt * const e = Q_NEW_X(KodeConfigReqEvt, 1U, CONFIG_REQ_SIG);
+
+    if ( NULL == e )
+    {
+        return false;
+    }
+    e->seq = GUI_OFF_SEQ_READ;
+    if ( set )
+    {
+        e->seq = GUI_OFF_SEQ_SET;
+    }
+    e->set = set;
+    (void)snprintf(e->key, sizeof(e->key), "%s", GUI_OFF_KEY);
+    e->i    = 0;
+    e->b    = false;
+    e->e    = at;
+    e->s[0] = '\0';
+    return kode_config_post(e, &l_gui.super);
+}
+
+/**
+ * @brief Ask the board's rest what the time asleep before OFF is.
+ *
+ * Posted on every entry into the control centre, as the volume is: the
+ * console's `config key="off_after"` can have moved it while this screen was
+ * away.
+ */
+static void gui_off_after_ask(void)
+{
+    (void)gui_off_after_send(false, 0U);
+}
+
+/**
+ * @brief An answer that says the time asleep before OFF.
+ *
+ * Taken whoever asked: the console's `config key="off_after"` moves the row
+ * as this AO's own step does. A refused set still says the word in force.
+ *
+ * @param me The AO.
+ * @param a  The answer; one about another setting is not here to be read.
+ */
+static void gui_off_after_answer(Gui * const me, KodeConfigAnsEvt const * const a)
+{
+    if ( (strcmp(a->key, GUI_OFF_KEY) == 0) && ('\0' != a->value[0])
+        && (strcmp(a->value, me->off_word) != 0) )
+    {
+        (void)snprintf(me->off_word, sizeof(me->off_word), "%s", a->value);
+        if ( GUI_SHEET_MORE == me->sheet )
+        {
+            gui_sheet_refill(me);
+        }
+    }
 }
 
 #define GUI_NVS_KEY_VIB  "volvib"   /* kgui/volvib: the volume stands on the vibrate stop. */
@@ -22215,7 +22537,7 @@ static void gui_wifi_fill(Gui * const me)
     }
     gui_sheet_header(me, look.glyph, disc, "", sub);
 
-    /* No header over the page (Luismi, 4-nov: no titles at the top): the
+    /* No header over the page (no titles at the top): the
      * switch, pinned first, says what the radio is doing - off, on, or the
      * network it is on. */
     lv_obj_t * const sw = gui_sheet_row(me, "Wi-Fi", sub, row, look.glyph, NULL);
@@ -22278,7 +22600,7 @@ static void gui_wifi_fill(Gui * const me)
      *    first, which is the order somebody would pick them in - with the
      *    strength of the ones in range. */
     for ( uint8_t i = 0U;
-         (i < me->saved_n) && (me->sheet_n < (uint8_t)(GUI_SHEET_ROWS_MAX - 1U));
+         (i < me->saved_n) && ((uint8_t)(GUI_SHEET_ROWS_MAX - 1U) > me->sheet_n);
          ++i )
     {
         char s[24];
@@ -22310,7 +22632,7 @@ static void gui_wifi_fill(Gui * const me)
      *    nothing a press could do with it - which is what the row after the
      *    list is for, so the list leaves it its place. */
     for ( uint8_t i = 0U;
-         (i < me->scan_n) && (me->sheet_n < (uint8_t)(GUI_SHEET_ROWS_MAX - 1U));
+         (i < me->scan_n) && ((uint8_t)(GUI_SHEET_ROWS_MAX - 1U) > me->sheet_n);
          ++i )
     {
         bool const open = (0U == me->scan_auth[i]);
@@ -22503,7 +22825,7 @@ static const char *gui_kbd_stage_name(uint8_t stage)
 {
     static const char *const NAMES[] = { "idle", "name", "password", "joining", "ble" };
 
-    if ( stage >= (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) )
+    if ( (uint8_t)(sizeof(NAMES) / sizeof(NAMES[0])) <= stage )
     {
         return "?";
     }
@@ -22550,16 +22872,7 @@ static void gui_kbd_apply(Gui const * const me)
 {
     kgui_kbd_spec_t spec;
 
-    if ( (uint8_t)GUI_KBD_BLE == me->kbd_stage )
-    {
-        spec.title       = "Bluetooth name";
-        spec.placeholder = "Name";
-        spec.go          = "Save";
-        spec.cap         = (uint8_t)GUI_BLE_TYPED_MAX;
-        spec.secret      = false;
-        spec.min         = 0U;   /* nothing typed: back to the serial */
-    }
-    else if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
+    if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
     {
         spec.title       = GUI_KBD_HIDDEN;
         spec.placeholder = GUI_KBD_NETWORK_NAME;
@@ -22604,7 +22917,7 @@ static void gui_kbd_fill(Gui * const me)
         }
         if ( NULL != handle )
         {
-            /* Nothing over the field: no handle, no title (Luismi, 4-nov).
+            /* Nothing over the field: no handle, no title.
              * BOT and a drag from the top band still close the card. */
             lv_obj_set_hidden(handle, true);
         }
@@ -22699,12 +23012,7 @@ static void gui_kbd_go(Gui * const me)
     uint32_t const now = khal_time_ms();
     size_t const   len = kgui_keyboard_len();
 
-    if ( (uint8_t)GUI_KBD_BLE == me->kbd_stage )
-    {
-        gui_ble_name_set(me, kgui_keyboard_text());
-        gui_sheet_close(me);
-    }
-    else if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
+    if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
     {
         if ( 0U == len )
         {
@@ -22771,7 +23079,7 @@ static void gui_kbd_act(Gui * const me, kgui_kbd_ctl_t ctl)
     if ( KGUI_KBD_FULL == r )
     {
         (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
-        if ( ((uint8_t)GUI_KBD_NAME == me->kbd_stage) || ((uint8_t)GUI_KBD_BLE == me->kbd_stage) )
+        if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
         {
             kgui_hint(GUI_KBD_NAME_FULL);
         }
@@ -22878,7 +23186,7 @@ static void gui_kbd_tick(Gui * const me)
         uint32_t const at = ((now - me->kbd_join_ms) / GUI_KBD_JOIN_DOT_MS)
                             % (uint32_t)(sizeof(WALK) / sizeof(WALK[0]));
 
-        if ( at != (uint32_t)me->kbd_join_dot )
+        if ( (uint32_t)me->kbd_join_dot != at )
         {
             me->kbd_join_dot = (uint8_t)at;
             kgui_keyboard_hold(WALK[at], now);
@@ -23226,33 +23534,94 @@ static void gui_ble_name_send(Gui const * const me)
 }
 
 /**
- * @brief Take what was typed as the name Bluetooth shows: the apps look for the
- *        prefix, so it is always there. Nothing typed goes back to the serial.
+ * @brief Whether words can follow the prefix in the name: no control byte.
  *
- * @param me    The AO.
- * @param typed The words.
+ * Bytes of 0x80 and over pass, so a name may be UTF-8.
+ *
+ * @param w The words, terminated.
+ * @return true when none is a control byte.
  */
-static void gui_ble_name_set(Gui * const me, const char *typed)
+static bool gui_ble_words_ok(const char *w)
 {
-    size_t skip = 0U;
+    bool ok = true;
 
-    while ( ' ' == typed[skip] )
+    for ( size_t i = 0U; ok && ('\0' != w[i]); ++i )
     {
-        ++skip;
+        uint8_t const c = (uint8_t)w[i];
+
+        ok = (GUI_BLE_CHAR_FIRST <= c) && (GUI_BLE_CHAR_DEL != c);
     }
-    if ( '\0' == typed[skip] )
+    return ok;
+}
+
+/**
+ * @brief Answer `config key="ble_name"`, changing the name first when asked.
+ *
+ * The board advertises GUI_BLE_PREFIX and the words, and the radio is told at
+ * once (gui_ble_name_send()). The spaces at either end of the words are
+ * dropped. GUI_BLE_NAME_NONE goes back to the serial: the console takes no
+ * empty string. Words of more than GUI_BLE_WORDS_MAX bytes, or with a control
+ * byte, are refused. The value is the words without the prefix, or
+ * GUI_BLE_NAME_NONE.
+ *
+ * @param me The AO.
+ * @param r  The request.
+ */
+static void gui_ble_name_config(Gui * const me, KodeConfigReqEvt const * const r)
+{
+    const char   *value = GUI_BLE_NAME_NONE;
+    kode_status_t st    = KODE_OK;
+
+    if ( r->set )
     {
-        me->ble_name[0] = '\0';
-        (void)khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME);
+        char         words[KODE_CONFIG_VALUE_MAX + 1U];
+        size_t const n = kgui_trim_spaces(r->s, words, sizeof(words));
+
+        if ( strcmp(words, GUI_BLE_NAME_NONE) == 0 )
+        {
+            me->ble_name[0] = '\0';
+            (void)khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME);
+        }
+        else if ( (0U == n) || (GUI_BLE_WORDS_MAX < n) || !gui_ble_words_ok(words) )
+        {
+            KLOG_D(TAG, "ble_name: refused - 1 to %u bytes, no control byte, "
+                        "or " GUI_BLE_NAME_NONE, (unsigned)GUI_BLE_WORDS_MAX);
+            st = KODE_DENIED;
+        }
+        else
+        {
+            /* gui_ble_words_ok() and the check above held the words to
+             * GUI_BLE_WORDS_MAX. */
+            (void)snprintf(me->ble_name, sizeof(me->ble_name), "%s%.*s",
+                           GUI_BLE_PREFIX, (int)GUI_BLE_WORDS_MAX, words);
+            if ( khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME,
+                                  me->ble_name) != KODE_OK )
+            {
+                KLOG_W(TAG, "the store refused kgui/%s; the name holds until "
+                            "the next reboot", GUI_NVS_KEY_BLE_NAME);
+            }
+        }
+        if ( KODE_OK == st )
+        {
+            const char *said = "the serial";
+
+            if ( '\0' != me->ble_name[0] )
+            {
+                said = me->ble_name;
+            }
+            KLOG_N(TAG, "bluetooth name: '%s'", said);
+            gui_ble_name_send(me);
+            if ( GUI_SHEET_BLE == me->sheet )
+            {
+                gui_sheet_refill(me);
+            }
+        }
     }
-    else
+    if ( '\0' != me->ble_name[0] )
     {
-        (void)snprintf(me->ble_name, sizeof(me->ble_name), "%s%.*s", GUI_BLE_PREFIX,
-                       (int)GUI_BLE_TYPED_MAX, &typed[skip]);
-        (void)khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME, me->ble_name);
+        value = gui_ble_name_shown(me);
     }
-    KLOG_N(TAG, "bluetooth name: '%s'", ('\0' != me->ble_name[0]) ? me->ble_name : "the serial");
-    gui_ble_name_send(me);
+    (void)kode_config_answer(&me->super, r, st, '\0' != me->ble_name[0], value);
 }
 
 /**
@@ -23302,7 +23671,7 @@ static void gui_ble_fill(Gui * const me)
     gui_sheet_header(me, look.glyph, disc, "",
                      khal_identity_valid() ? khal_identity_serial()
                                            : "KODE-DOT");
-    /* No header over the page (Luismi, 4-nov: no titles at the top): the
+    /* No header over the page (no titles at the top): the
      * switch, pinned first, says what the radio is doing. */
 
     if ( gui_sheet_row(me, "Bluetooth", state, row, look.glyph, NULL) == NULL )
@@ -23320,8 +23689,9 @@ static void gui_ble_fill(Gui * const me)
         return;
     }
 
-    /* The name to look for in the app (Luismi, 5-nov): the serial, as it is
-     * advertised, never the printed form; a chosen one as it was typed. */
+    /* The name to look for in the app: the serial, as it is
+     * advertised, never the printed form; a stored one without its prefix. A
+     * reading: `config key="ble_name"` changes it. */
     if ( gui_sheet_row(me, "Visible as", gui_ble_name_shown(me),
                       KUI_COLOR_SURFACE, &kui_glyph_info, NULL) != NULL )
     {
@@ -23349,15 +23719,14 @@ static void gui_ble_fill(Gui * const me)
 
     /* With a device bonded the board hides from everyone else and takes no
      * new one: this shows it for five minutes, so another can pair. While
-     * that time runs the row says so; it ends early when a device pairs. */
+     * that time runs the row says so; it ends early when a device pairs.
+     * With a device connected nothing is on the air, and the row says when
+     * the board will show itself instead (kgui_ble_pair_words()). */
     if ( 0U < me->ble_bonds )
     {
-        const char *sub = NULL;
+        const char * const sub = kgui_ble_pair_words(me->ble_pair_open, me->ble_pair_wait,
+                                                     me->ble_linked);
 
-        if ( me->ble_pair_open )
-        {
-            sub = "Visible to new devices";
-        }
         if ( gui_sheet_row_plain(me, "Pair new device", sub,
                                 gui_action_ground(GUI_ACT_SECONDARY)) != NULL )
         {
@@ -23400,19 +23769,11 @@ static void gui_ble_act(Gui * const me, uint16_t tag)
     {
         gui_ble_switch(me);
     }
-    else if ( (uint16_t)GUI_TAG_BLE_NAME == tag )
-    {
-        me->kbd_ssid[0] = '\0';
-        me->kbd_secured = false;
-        me->kbd_door    = (uint16_t)GUI_TAG_BLE_NAME;
-        me->kbd_stage   = (uint8_t)GUI_KBD_BLE;
-        gui_sheet_open_kind(me, GUI_SHEET_KEYPAD);
-    }
     else if ( (uint16_t)GUI_TAG_BLE_PAIR == tag )
     {
-        /* AO_Radio answers with BLE_STATE_SIG, and its pair_open is what
-         * puts the row's line up. */
-        KLOG_I(TAG, "pair new device: the board is visible");
+        /* AO_Radio answers with BLE_STATE_SIG, and what it says there is
+         * what puts the row's line up. */
+        KLOG_I(TAG, "pair new device: asked");
         ble_pair_open_request();
     }
     else if ( (uint16_t)GUI_TAG_BLE_FORGET == tag )
@@ -23459,7 +23820,7 @@ static lv_obj_t *gui_ble_dot(Gui const * const me)
  * @brief A switch of a radio pressed: the page says so at once.
  *
  * The person has said what they want and the radio's seconds on the way there
- * are not theirs to wait for (Luismi, 5-nov). The radio's own announcements
+ * are not theirs to wait for. The radio's own announcements
  * only take over once they agree, or after GUI_WISH_LOST_MS (gui_wish_lost()).
  *
  * @param me The AO.
@@ -23828,6 +24189,182 @@ static bool gui_os_image_on_card(Gui const * const me)
 }
 
 /**
+ * @brief Whether this build has an update service to ask.
+ * @return true unless CONFIG_KGUI_OS_UPDATE_URL is empty.
+ */
+static bool gui_os_service(void)
+{
+    return (sizeof(GUI_OS_SERVICE) > GUI_OS_SERVICE_NONE);
+}
+
+/**
+ * @brief Whether a release's link may be a plain one.
+ * @return true only when the service itself is asked with no TLS, on a bench.
+ */
+static bool gui_os_plain(void)
+{
+    return (strncmp(GUI_OS_SERVICE, GUI_OS_SERVICE_PLAIN,
+                    sizeof(GUI_OS_SERVICE_PLAIN) - 1U) == 0);
+}
+
+/**
+ * @brief The newer version the service named.
+ * @param me The AO.
+ * @return Its version; "" while nothing was ever kept.
+ */
+static const char *gui_os_version(Gui const * const me)
+{
+    const char *version = "";
+
+    if ( NULL != me->os )
+    {
+        version = me->os->rel.version;
+    }
+    return version;
+}
+
+/**
+ * @brief A check ended with nothing to show.
+ *
+ * @param me  The AO.
+ * @param why What went wrong, for the log.
+ */
+static void gui_os_failed(Gui * const me, const char *why)
+{
+    me->os_check = (uint8_t)KGUI_OSREL_FAILED;
+    KLOG_I(TAG, "update: not checked (%s)", why);
+}
+
+/**
+ * @brief Ask the update service which kodeOS is the latest.
+ *
+ * Asked when About opens, when Wi-Fi gets its address under that page, and
+ * on the top button on its row: never by itself, since About is the only
+ * place that shows the answer. Nothing is asked with no service, with no
+ * address, or while a question is out. The answer comes back as
+ * NET_HTTP_RSP_SIG (gui_os_answer()), into a block of PSRAM taken at the
+ * first question and lent to AO_Net until then.
+ *
+ * @param me  The AO.
+ * @param why What asked, for the log.
+ */
+static void gui_os_ask(Gui * const me, const char *why)
+{
+    /* cppcheck-suppress knownConditionTrueFalse ; the service is the build's choice: an empty CONFIG_KGUI_OS_UPDATE_URL asks nobody */
+    if ( (!gui_os_service()) || (!me->wifi_linked)
+        || ((uint8_t)KGUI_OSREL_ASKING == me->os_check) )
+    {
+        return;     /* nobody to ask, no way to ask, or asked already */
+    }
+    if ( NULL == me->os )
+    {
+        /* cppcheck-suppress misra-c2012-11.5 ; khal_alloc_psram() answers void *: PSRAM is taken by name (rule 8) */
+        me->os = (GuiOsUpdate *)khal_alloc_psram(GUI_OS_ALIGN, sizeof(GuiOsUpdate));
+        if ( NULL != me->os )
+        {
+            (void)memset(me->os, 0, sizeof(*me->os));
+        }
+    }
+    if ( NULL == me->os )
+    {
+        gui_os_failed(me, "no memory for the answer");
+        return;
+    }
+    if ( net_http_ask(&me->super, false, GUI_OS_SERVICE, NULL, 0U, NULL,
+                      me->os->answer, KGUI_OSREL_ANSWER_MAX) == KODE_OK )
+    {
+        me->os_check = (uint8_t)KGUI_OSREL_ASKING;
+        KLOG_I(TAG, "update: asking the service (%s)", why);
+    }
+    else
+    {
+        gui_os_failed(me, "AO_Net did not take the question");
+    }
+}
+
+/**
+ * @brief The update service answered, or the question failed.
+ *
+ * A release newer than the running image is kept and offered; an equal or
+ * older one, and a service with no release at all, leave the board up to
+ * date. About's row follows when that page is up.
+ *
+ * @param me The AO.
+ * @param r  AO_Net's answer; the body is in the block the question lent.
+ */
+static void gui_os_answer(Gui * const me, NetHttpRspEvt const * const r)
+{
+    bool const reached = ((uint8_t)KODE_OK == r->rc);
+
+    if ( (NULL == me->os) || ((uint8_t)KGUI_OSREL_ASKING != me->os_check) )
+    {
+        return;     /* not the answer to a question of this file's */
+    }
+    if ( reached && ((uint16_t)GUI_HTTP_OK == r->result.status)
+        && (!r->result.truncated) && (KGUI_OSREL_ANSWER_MAX >= r->result.kept) )
+    {
+        kgui_osrel_t     rel;
+        kdrv_slot_desc_t self;
+        const char      *running = "";
+
+        me->os->answer[r->result.kept] = '\0';
+        if ( kdrv_running_desc(&self) == KODE_OK )
+        {
+            running = self.version;
+        }
+        if ( !kgui_osrel_parse(me->os->answer, r->result.kept, gui_os_plain(), &rel) )
+        {
+            gui_os_failed(me, "the service's answer did not read");
+        }
+        else if ( kgui_osrel_newer(rel.version, running) )
+        {
+            me->os->rel  = rel;
+            me->os_check = (uint8_t)KGUI_OSREL_AVAILABLE;
+            KLOG_N(TAG, "update: kodeOS %s is available; this is %s",
+                   rel.version, running);
+        }
+        else
+        {
+            me->os_check = (uint8_t)KGUI_OSREL_CURRENT;
+            KLOG_I(TAG, "update: the service names kodeOS %s; this is %s, up to date",
+                   rel.version, running);
+        }
+    }
+    else if ( reached && ((uint16_t)GUI_HTTP_NOT_FOUND == r->result.status) )
+    {
+        me->os_check = (uint8_t)KGUI_OSREL_CURRENT;
+        KLOG_I(TAG, "update: the service names no release");
+    }
+    else
+    {
+        KLOG_I(TAG, "update: the service gave status %u, HTTP %u",
+               (unsigned)r->rc, (unsigned)r->result.status);
+        gui_os_failed(me, "no answer from the service");
+    }
+    if ( GUI_SHEET_ABOUT == me->sheet )
+    {
+        gui_sheet_refill(me);
+    }
+}
+
+/**
+ * @brief What About's "Software update" row says now.
+ * @param me The AO.
+ * @return The row's state, from the card, the network, the battery and the check.
+ */
+static kgui_osrel_row_t gui_os_row(Gui const * const me)
+{
+    kgui_osrel_view_t view;
+
+    view.service = gui_os_service();
+    view.card    = gui_os_image_on_card(me);
+    view.linked  = me->wifi_linked;
+    view.power   = kgui_osrel_power_ok(me->soc, me->vbus);
+    view.check   = (kgui_osrel_check_t)me->os_check;
+    return kgui_osrel_row(&view);
+}
+
+/**
  * @brief What a row of More says under its name: the page's reading, in a
  *        few words.
  *
@@ -23948,10 +24485,9 @@ static void gui_more_row(Gui * const me, uint8_t which)
 static void gui_more_fill(Gui * const me)
 {
     gui_sheet_header(me, NULL, KUI_COLOR_TEXT, "Settings", "");
-    /* What a person looks for, first (Luismi, 5-nov): the radios and the
+    /* What a person looks for, first: the radios and the
      * battery, also here though their circles open them; the time; what
-     * changes where it stands; and the Dot itself last. The rail has no
-     * Self-test row. */
+     * changes where it stands; the self-test; and the Dot itself last. */
     gui_more_row(me, (uint8_t)GUI_MORE_WIFI);
     gui_more_row(me, (uint8_t)GUI_MORE_BLE);
     gui_more_row(me, (uint8_t)GUI_MORE_BAT);
@@ -23960,6 +24496,7 @@ static void gui_more_fill(Gui * const me)
     gui_more_row(me, (uint8_t)GUI_MORE_ZONE);
     gui_screen_fill_more(me);
     gui_rails_fill(me);
+    gui_more_row(me, (uint8_t)GUI_MORE_TEST);
     gui_more_row(me, (uint8_t)GUI_MORE_ABOUT);
 }
 
@@ -24285,16 +24822,19 @@ static void gui_about_fill(Gui * const me)
      * rather than greying itself out: a row that can explain its own refusal
      * is worth more than a row that only refuses (rule 6). */
     {
-        const char *image = "No image on the card";
-        GuiActRole  role  = GUI_ACT_SECONDARY;
+        char                   words[KGUI_OSREL_TEXT_MAX];
+        kgui_osrel_row_t const row  = gui_os_row(me);
+        GuiActRole             role = GUI_ACT_SECONDARY;
 
-        if ( gui_os_image_on_card(me) )
+        /* The card's image, or the release the update service named, or why
+         * there is neither (kgui_osrel_row()). */
+        kgui_osrel_row_text(row, gui_os_version(me), words, sizeof(words));
+        if ( kgui_osrel_row_installs(row) )
         {
-            image = "kodeos.bin on the card";
             /* The card's one yellow pill, and only while it can act. */
-            role  = GUI_ACT_PRIMARY;
+            role = GUI_ACT_PRIMARY;
         }
-        if ( gui_sheet_row_plain(me, "Software update", image,
+        if ( gui_sheet_row_plain(me, "Software update", words,
                                 gui_action_ground(role)) != NULL )
         {
             me->sheet_tag[me->sheet_n - 1U] = (uint16_t)GUI_TAG_ABOUT_UPDATE;
@@ -24314,7 +24854,9 @@ static void gui_about_fill(Gui * const me)
 /**
  * @brief The top button on one About row.
  *
- * Two rows answer it: Update writes kodeos.bin from the card, and Factory
+ * Three rows answer it: Technical shows or hides its rows, Software update
+ * installs the card's kodeos.bin or the release the update service named
+ * (or asks that service again when there is nothing to install), and Factory
  * reset raises its question.
  *
  * @param me  The AO.
@@ -24338,11 +24880,31 @@ static void gui_about_act(Gui * const me, uint16_t tag)
     {
         return;     /* every other row on this page is a reading */
     }
-    if ( !gui_os_image_on_card(me) )
+    kgui_osrel_row_t const row = gui_os_row(me);
+
+    if ( kgui_osrel_row_asks(row) )
     {
-        return;     /* the row already says there is no file */
+        /* Nothing to install: the press asks the service again. */
+        gui_os_ask(me, "the row");
+        gui_sheet_refill(me);
+        return;
     }
-    KLOG_I(TAG, "updating kodeOS from the card");
+    if ( !kgui_osrel_row_installs(row) )
+    {
+        return;     /* the row already says why there is nothing to do */
+    }
+    GuiAsk from = GUI_ASK_OS_NET;
+
+    if ( KGUI_OSREL_ROW_CARD == row )
+    {
+        from = GUI_ASK_OS;
+        KLOG_I(TAG, "updating kodeOS from the card");
+    }
+    else
+    {
+        KLOG_N(TAG, "updating kodeOS to %s from the update service",
+               gui_os_version(me));
+    }
     /* The image goes into the inactive kodeOS slot, and AO_AppMgr ends
      * every write there with AO_Boot's switch and a restart into it, which
      * is what the Opening card says. The card rises first, at 0 %, about no
@@ -24354,7 +24916,7 @@ static void gui_about_act(Gui * const me, uint16_t tag)
     me->open_hold  = false;
     me->sheet_row  = -1;
     (void)snprintf(me->write_name, sizeof(me->write_name), "kodeOS");
-    gui_write_ask(me, GUI_ASK_OS, "");
+    gui_write_ask(me, from, "");
     gui_sheet_open_kind(me, GUI_SHEET_OPENING);
 }
 
@@ -24659,6 +25221,24 @@ static void gui_sheet_kind_take(Gui * const me, GuiSheet kind)
         gui_kbd_forget(me);
     }
 #endif
+    if ( (GUI_SHEET_OPENING == kind) || (GUI_SHEET_FAILURE == kind) )
+    {
+        /* A write's card closes onto the screen, as it always has. */
+        me->sheet_under = GUI_SHEET_NONE;
+    }
+    else if ( gui_sheet_is_system(kind) && !gui_sheet_is_system(me->sheet) )
+    {
+        /* A system card arriving over a page notes it, to close onto it. */
+        me->sheet_under = GUI_SHEET_NONE;
+        if ( gui_sheet_is_page(me->sheet) )
+        {
+            me->sheet_under = me->sheet;
+        }
+    }
+    else
+    {
+        /* A card taken over by another keeps what it noted. */
+    }
     me->sheet = kind;
     if ( (GUI_SHEET_DETAILS != kind) && (GUI_SHEET_OPENING != kind)
         && (GUI_SHEET_FAILURE != kind) && (GUI_SHEET_STOPPED != kind) )
@@ -24681,16 +25261,8 @@ static void gui_sheet_kind_take(Gui * const me, GuiSheet kind)
 static const GuiListPage *gui_sheet_list_page(Gui const * const me,
                                               GuiSheet kind)
 {
-    /* The keypad for the Bluetooth name belongs to Bluetooth's page. */
-    static const GuiListPage ble_keypad = {
-        GUI_SHEET_KEYPAD, GUI_SHEET_BLE, (uint16_t)GUI_TAG_BLE_NAME, "Bluetooth"
-    };
     const GuiListPage *found = NULL;
 
-    if ( (GUI_SHEET_KEYPAD == kind) && ((uint8_t)GUI_KBD_BLE == me->kbd_stage) )
-    {
-        return &ble_keypad;
-    }
     if ( (GUI_SHEET_BAT == kind) && me->bat_from_cc )
     {
         return found;
@@ -24702,7 +25274,7 @@ static const GuiListPage *gui_sheet_list_page(Gui const * const me,
     }
 
     for ( size_t i = 0U;
-         (i < (sizeof(s_list_pages) / sizeof(s_list_pages[0])))
+         ((sizeof(s_list_pages) / sizeof(s_list_pages[0])) > i)
          && (NULL == found); ++i )
     {
         if ( s_list_pages[i].list == kind )
@@ -24866,7 +25438,7 @@ static void on_sheet_row_clicked(lv_event_t *e)
         return;
     }
     /* In the place it stands: a finger points at what it sees, and the list
-     * does not move under it (Luismi, 5-nov). The pad's walk does move it. */
+     * does not move under it. The pad's walk does move it. */
     (void)gui_sheet_mark(&l_gui, idx);
     gui_sheet_act(&l_gui, idx, 0);
 }
@@ -24909,7 +25481,7 @@ static void on_sheet_action_clicked(lv_event_t *e)
 /**
  * @brief Back during a load: out to the list at once, and nothing is asked.
  *
- * Back has already said it (Luismi, 5-nov). A request still held for its card
+ * Back has already said it. A request still held for its card
  * never goes; one that went is called off, and its end says nothing.
  *
  * @param me The AO, its Opening card up.
@@ -26003,8 +26575,8 @@ static void gui_face_navigate(Gui * const me, kdrv_button_t b, bool pressed)
             }
             me->bot_armed = false;
             me->bot_face  = false;
-            /* Pressed and let go, the Lock rests, at once: no hold to wait for
-             * (Luismi, 5-nov). Held on, the arc begins and the release does
+            /* Pressed and let go, the Lock rests, at once: no hold to wait
+             * for. Held on, the arc begins and the release does
              * nothing here. For a second after a wake nothing rests it again
              * (the apocrifa's REST_AFTER_WAKE_MS: the same button read twice). */
             uint32_t const now  = khal_time_ms();
@@ -26234,7 +26806,7 @@ static void gui_face_poll(Gui * const me)
     {
         struct tm t;
 
-        if ( (me->hour_was == -1) && (0 <= h) )
+        if ( (-1 == me->hour_was) && (0 <= h) )
         {
             me->hour_due = true;   /* The time became true. */
         }
@@ -27013,7 +27585,7 @@ static void gui_tick_now(Gui * const me)
 /**
  * @brief The first press of the top button at Rest, or its end.
  *
- * Luismi's two-press wake (3-nov), as the apocrifa does it. On: Kody alone
+ * The two-press wake, as the apocrifa does it. On: Kody alone
  * wakes, in colour, from the frame he stands on; the glass comes back to the
  * stored level, so the clock, the date and the battery are kept low by
  * object (kgui_screen_face_dim()), and "Press ● again" takes the date's
@@ -27046,7 +27618,7 @@ static void gui_rest_knock(Gui * const me, bool on)
     {
         kgui_hint_dismiss();
         /* Kody alone in colour - his blue and his face - over the outline of
-         * the rest of his scene, which is the point (Luismi, 4-nov): by the
+         * the rest of his scene, which is the point: by the
          * veil, never at once (5-nov). */
         if ( (NULL != row) && (NULL != row->peek) )
         {
@@ -27069,7 +27641,7 @@ static void gui_rest_knock(Gui * const me, bool on)
         /* Rest is over: gui_rest_leave() has the face. */
     }
     /* The glass stays at the Rest level through the knock, so the outline and
-     * the hour stay as they are (Luismi, 5-nov); only a knock that cut the fall
+     * the hour stay as they are; only a knock that cut the fall
      * short has the dimming to do yet. */
     if ( me->at_rest && !me->rest_dimmed )
     {
@@ -27344,7 +27916,7 @@ static void gui_veil_take(Gui * const me)
             (void)memcpy(me->veil_px, buf->data, px_bytes);
             /* The canvas is transparent where Kody is not: through a veil like
              * that the next frame's scene shows at once, a flash. Opaque, over
-             * the face's black, the whole frame fades in (Luismi, 5-nov).
+             * the face's black, the whole frame fades in.
              * Premultiplied, so the colours stay as they are. */
             for ( uint32_t y = 0U; y < buf->header.h; ++y )
             {
@@ -27686,7 +28258,7 @@ static void gui_deep_poke(Gui * const me)
 /**
  * @brief The deep rest is near: the glass goes black and says so, with a count.
  *
- * Luismi, 5-nov: the deepest rest turns the screen off, but it says so five
+ * The deepest rest turns the screen off, but it says so five
  * seconds before. The black it fades to is the black it sleeps on.
  *
  * @param me The AO.
@@ -27787,12 +28359,12 @@ static void gui_deep_tick(Gui * const me)
             if ( (!me->deep_fading) && ((int32_t)GUI_DEEP_FADE_MS >= left) )
             {
                 /* The words go while the link is up: the last frame the panel
-                 * holds has to be the black one (Luismi, 5-nov: «Going to
+                 * holds has to be the black one («Going to
                  * sleep» stayed written on the sleeping glass). */
                 lv_obj_t * const both[] = { me->deep_digit, me->deep_words };
 
                 me->deep_fading = true;
-                for ( size_t i = 0U; i < (sizeof(both) / sizeof(both[0])); ++i )
+                for ( size_t i = 0U; (sizeof(both) / sizeof(both[0])) > i; ++i )
                 {
                     lv_anim_t a;
 
@@ -27805,7 +28377,7 @@ static void gui_deep_tick(Gui * const me)
                 }
             }
         }
-        else if ( left > -(int32_t)GUI_DEEP_BLACK_MS )
+        else if ( -(int32_t)GUI_DEEP_BLACK_MS < left )
         {
             /* Black, and a frame or two of it on the glass. */
             lv_obj_set_hidden(me->deep_digit, true);
@@ -27835,7 +28407,7 @@ static void gui_deep_tick(Gui * const me)
 /**
  * @brief Any input at Rest but the top button: say how the Dot wakes.
  *
- * Somebody wants in (Luismi, 5-nov): the screen, the pad and the red button
+ * Somebody wants in: the screen, the pad and the red button
  * ask for the blue one, twice. Kody stays asleep; only the knock wakes him.
  *
  * @param me The AO.
@@ -28020,7 +28592,7 @@ static void gui_settle_go(Gui * const me)
  */
 static void gui_settle_learn(Gui * const me, uint8_t pct)
 {
-    if ( pct != gui_settle_level(me, me->settle_at) )
+    if ( gui_settle_level(me, me->settle_at) != pct )
     {
         me->rest_stored = pct;
         me->settle_at   = 0U;
@@ -28158,7 +28730,7 @@ static uint32_t gui_tick_wait(Gui const * const me, uint32_t lvgl_next)
         if ( me->rest_hint && ((khal_time_ms() - me->rest_hint_ms) < KGUI_VEIL_MS) )
         {
             /* The words come in on these frames: at Rest's pace they would
-             * wait a second for the first (Luismi, 5-nov). */
+             * wait a second for the first. */
             wait = (KODE_GUI_TICK_MS > lvgl_next) ? lvgl_next : KODE_GUI_TICK_MS;
         }
         if ( ((uint8_t)GUI_FALL_NONE != me->rest_fall) || (NULL != me->veil) )
@@ -28237,7 +28809,7 @@ static void gui_rest_leave(Gui * const me)
     gui_veil_show(me);
     kgui_hint_dismiss();
     /* Rest moved the content to save the panel. Home at a stroke is the jump
-     * between the sleeping Kody and the waking one (Luismi, 5-nov; measured up
+     * between the sleeping Kody and the waking one (measured up
      * to 4 px on the Dot): it goes home while he leaps. The next Rest starts
      * from home, as the apocrifa's does (kshell_face.c). */
     kgui_screen_face_home(GUI_REST_HOME_DELAY_MS, GUI_REST_HOME_MS);
@@ -28439,7 +29011,7 @@ static void gui_face_kody_tick(Gui * const me)
  *
  * The face first seen behind a curtain, back from an app: the first frame was
  * Apps, so nobody woke him, and the curtain's picture would be a face without
- * him, who comes in when it lands (Luismi, 5-nov). The first_hold's rule holds
+ * him, who comes in when it lands. The first_hold's rule holds
  * here too: he is there from the first frame of the fade. The wake-up that
  * plays when the face lands starts from this very frame, so nothing jumps.
  * Nothing moves until then: he is paused (gui_kody_stand()).
@@ -28472,7 +29044,7 @@ static bool gui_face_kody_ready(Gui * const me)
              * paint has run yet on a boot that came up on Apps. */
             gui_face_time_paint(me);
             id = gui_face_scene_want(me);
-            if ( me->face_stood == (uint16_t)id )
+            if ( (uint16_t)id == me->face_stood )
             {
                 /* He stands in it already. */
             }
@@ -28979,7 +29551,7 @@ static void gui_assets_cmd(Gui const * const me, GuiAssetsCmdEvt const * const e
         {
             why = "builtin";
         }
-        if ( e->cmd < (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) )
+        if ( (uint8_t)(sizeof(WORDS) / sizeof(WORDS[0])) > e->cmd )
         {
             kgui_assets_refuse(WORDS[e->cmd], why);
         }
@@ -29096,7 +29668,7 @@ static void gui_kody_fill(Gui * const me)
         (void)gui_sheet_row_plain(me, "Updating", prog, KUI_COLOR_SURFACE);
         word = NULL;
     }
-    else if ( kgui_assets_install_why()[0] != '\0' )
+    else if ( '\0' != kgui_assets_install_why()[0] )
     {
         (void)gui_sheet_row_plain(me, "The update failed", kgui_assets_install_why(),
                                   KUI_COLOR_SURFACE);
@@ -29118,7 +29690,7 @@ static void gui_kody_fill(Gui * const me)
             me->sheet_tag[me->sheet_n - 1U] = (uint16_t)GUI_TAG_KODY_UPDATE;
         }
     }
-    if ( gui_kody_note(me)[0] != '\0' )
+    if ( '\0' != gui_kody_note(me)[0] )
     {
         gui_sheet_caption(me, gui_kody_note(me));
     }
@@ -29517,7 +30089,7 @@ static void gui_zone_migrate(Gui * const me, bool stored)
         uint8_t at = UINT8_MAX;
 
         if ( (khal_nvs_get_u8(GUI_NVS_NAMESPACE, "tzi", &at) == KODE_OK)
-            && (at < (sizeof(APOCRIFA) / sizeof(APOCRIFA[0]))) )
+            && ((sizeof(APOCRIFA) / sizeof(APOCRIFA[0])) > at) )
         {
             KLOG_N(TAG, "zone: %s comes from the apocrifa", APOCRIFA[at]);
             gui_zone_ask(me, APOCRIFA[at]);
@@ -29773,7 +30345,7 @@ static const GuiLock *gui_lock_choice(uint32_t s)
  * Once, at boot, beside the zone (Gui_waiting). The key holds one uint32_t
  * of seconds, 0 for never, as a record of four bytes: khal_nvs's one scalar
  * is a byte, ten minutes are 600 s, and a fixed-size record is the seam's
- * word for anything wider. A missing key is the default, two minutes; a
+ * word for anything wider. A missing key is the default, one minute; a
  * record that does not read, is not four bytes long or holds a time the
  * list does not offer is the default as well, said with a warning. Either
  * way the boot log names the time that came of it, once:
@@ -29955,7 +30527,7 @@ static const char *const s_clock_words[] = { "24h", "12h" };
  */
 static const uint32_t s_sleeps[] = { GUI_SLEEP_LOCK, 30U, 60U, 300U, 600U, 0U };
 
-/** @brief The face rests after half a minute untouched on a board with nothing stored (the apocrifa's is a minute; Luismi, 4-nov: reasonable times). */
+/** @brief The face rests after half a minute untouched on a board with nothing stored (the apocrifa's is a minute; reasonable times). */
 #define GUI_SLEEP_DEFAULT_S 60U   /* the apocrifa's CONFIG_KODEOS_SHELL_IDLE_DEFAULT_S */
 
 /** @brief Their words, in s_sleeps' order. */
@@ -30577,7 +31149,7 @@ static uint8_t gui_ring_next(uint8_t at, uint8_t n, int8_t dir)
  */
 static void gui_screen_rest(Gui * const me, int8_t dir)
 {
-    /* One time for the person (Luismi, 5-nov): the auto-lock and the rest go
+    /* One time for the person: the auto-lock and the rest go
      * together. s_locks has the choices. */
     uint32_t const now = (GUI_SLEEP_LOCK == me->sleep_s) ? me->lock_s : me->sleep_s;
     GuiLock const * const next = &s_locks[gui_ring_next(gui_lock_find(now), GUI_LOCK_COUNT, dir)];
@@ -30664,6 +31236,42 @@ static void gui_screen_lock(Gui * const me, int8_t dir)
     gui_sheet_refill(me);
 }
 
+/**
+ * @brief Turn off after: step the time asleep round the words AO_LowPower
+ *        offers.
+ *
+ * The words and their order are the owner's row (kode_config_find()). The row
+ * shows the new word at once; the owner's answer is the one that stays
+ * (gui_off_after_answer()). A step nobody could be asked for thuds.
+ *
+ * @param me  The AO.
+ * @param dir -1 for the one before, else the one after.
+ * @return true when the owner was asked for the new time.
+ */
+static bool gui_screen_off(Gui * const me, int8_t dir)
+{
+    const kode_config_t * const row = kode_config_find(GUI_OFF_KEY);
+    bool asked = false;
+
+    if ( (NULL != row) && (NULL != row->enums) && (0U < row->n_enums) )
+    {
+        uint8_t const at = kgui_span_next(row->enums, row->n_enums, me->off_word, dir);
+
+        if ( (at < row->n_enums) && gui_off_after_send(true, at) )
+        {
+            (void)snprintf(me->off_word, sizeof(me->off_word), "%s", row->enums[at]);
+            KLOG_N(TAG, "turn off after: %s asked", row->enums[at]);
+            gui_sheet_refill(me);
+            asked = true;
+        }
+    }
+    if ( !asked )
+    {
+        (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
+    }
+    return asked;
+}
+
 /** @brief A setter of one of the Screen card's switches. */
 typedef void (*gui_flag_set_fn)(Gui * const me, bool on);
 
@@ -30693,8 +31301,8 @@ static bool gui_screen_flip(Gui * const me, int8_t step, gui_flag_set_fn set,
 /**
  * @brief Act on one of the Screen card's settings rows.
  *
- * Rest after, Kody's scene and Haptics step round their values on the top
- * button, a tap and right, and back on left. Stay awake on USB and the
+ * Rest after, Turn off after, Kody's scene and Haptics step round their
+ * values on the top button, a tap and right, and back on left. Stay awake on USB and the
  * header's two supplies are switches, on the top button and a tap. Whatever changed
  * clicks after it changes, so the level that was just chosen is the one felt.
  *
@@ -30719,6 +31327,10 @@ static void gui_screen_act(Gui * const me, uint16_t tag, int8_t step)
         }
         case GUI_TAG_SCREEN_REST: {
             gui_screen_rest(me, dir);
+            break;
+        }
+        case GUI_TAG_SCREEN_OFF: {
+            changed = gui_screen_off(me, dir);
             break;
         }
         case GUI_TAG_SCREEN_SCENE: {
@@ -30922,11 +31534,13 @@ static void gui_screen_row(Gui * const me, uint16_t tag, const char *name,
 
 /**
  * @brief The Screen card's settings after the brightness and the auto-lock:
- *        Rest after, Kody's scene, Haptics, Motion and
+ *        Rest after, Turn off after, Kody's scene, Haptics, Motion and
  *        Stay awake on USB.
  *
  * Each row says its value in the second line; a switch wears Kody blue when it
  * is on and says "On", so colour is never the only sign. The card scrolls.
+ * Turn off after is AO_LowPower's setting and has a row only in a build that
+ * has it.
  *
  * @param me The AO.
  */
@@ -30937,6 +31551,12 @@ static void gui_screen_fill_more(Gui * const me)
     gui_screen_row(me, (uint16_t)GUI_TAG_SCREEN_REST, "Sleep after",
                    gui_lock_choice(asleep)->label, false, false,
                    &kui_glyph_moon_30);
+    if ( kode_config_find(GUI_OFF_KEY) != NULL )
+    {
+        gui_screen_row(me, (uint16_t)GUI_TAG_SCREEN_OFF, "Turn off after",
+                       kgui_span_label(me->off_word), false, false,
+                       &kui_glyph_power_30);
+    }
     gui_screen_row(me, (uint16_t)GUI_TAG_SCREEN_SCENE, "Kody's scene",
                    kgui_scene_label(gui_scene_word(me)), false, false,
                    &kui_glyph_scene_30);
@@ -31270,6 +31890,12 @@ static void gui_config(Gui * const me, KodeConfigReqEvt const * const r)
     {
         gui_sleep_config(me, r);
     }
+#if CONFIG_KODEOS_BLE
+    else if ( strcmp(r->key, GUI_CONFIG_KEY_BLE_NAME) == 0 )
+    {
+        gui_ble_name_config(me, r);
+    }
+#endif
     else if ( kgui_prefs_is_key(r->key) )
     {
         gui_prefs_config(me, r);
@@ -31364,7 +31990,7 @@ static void gui_pass_measure(Gui * const me, uint32_t t0, bool drew)
                    (unsigned)(wait / 1000U),
                    (unsigned)((wait % 1000U) / 100U));
         }
-        else if ( wait >= (GUI_PRESS_FRAME_MS * 1000U) )
+        else if ( (GUI_PRESS_FRAME_MS * 1000U) <= wait )
         {
             me->press_timing = false;
             KLOG_D(TAG, "button: nothing to draw within %u ms",
@@ -31480,7 +32106,7 @@ static void gui_lp_park(Gui * const me)
     lv_refr_now(me->disp);
     gui_flush_wait_cb(me->disp);
 
-    /* The deep rest is a black glass, with no time on it (Luismi, 5-nov). */
+    /* The deep rest is a black glass, with no time on it. */
     (void)memset(&glyphs, 0, sizeof(glyphs));
     me->lp_strip.buf = NULL;
     glyphs.rest_pct  = gui_lp_rest_pct(me);
@@ -31570,8 +32196,7 @@ static QState gui_lp_resume(Gui * const me)
     }
     /* A battery that went critical during the rest is said now, with the glass
      * back, and not a reading later. */
-    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state),
-                      ((uint8_t)GUI_SET_BAT_CHG == me->bat_state));
+    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state));
     return Q_TRAN(&Gui_face);
 }
 
@@ -31951,8 +32576,7 @@ static QState gui_rest_unpark(Gui * const me)
     {
         gui_lp_refusal_say(me);
     }
-    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state),
-                      ((uint8_t)GUI_SET_BAT_CHG == me->bat_state));
+    gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state));
     return Q_TRAN(&Gui_rest);
 }
 
@@ -31975,7 +32599,7 @@ void Gui_ctor(void)
     me->group_count     = 0U;
     me->pending_back    = false;
     me->home_way        = GUI_HOME_AS_CAME;
-    me->pad             = false; /* the apocrifa's: no ring until a button (Luismi, 18-oct) */
+    me->pad             = false; /* the apocrifa's: no ring until a button */
     me->lp_row          = -1;
     me->lp_shelf        = -1;
     me->shelf_sel       = -1;
@@ -32240,12 +32864,15 @@ void kgui_start(void)
           .enums = kgui_haptic_words,
           .n_enums = (uint8_t)KGUI_HAPTIC_LEVELS },
         { .name = KGUI_PREFS_KEY_USB,   .type = KODE_TYPE_BOOL },
+#if CONFIG_KODEOS_BLE
+        { .name = GUI_CONFIG_KEY_BLE_NAME, .type = KODE_TYPE_STRING },
+#endif
     };
 
     if ( KODE_CONFIG_ADD(AO_Gui, KODE_CONFIG_MARGIN, s_config) != KODE_OK )
     {
-        KLOG_E(TAG, "lock, scene, clock, kody_sleep and the two "
-                    "interface settings were refused; see the line above");
+        KLOG_E(TAG, "lock, scene, clock, kody_sleep, the two interface "
+                    "settings and ble_name were refused; see the line above");
     }
 #endif
 }
@@ -32272,8 +32899,9 @@ static QState Gui_initial(Gui * const me, void const * const par)
     }
 #endif
     QActive_subscribe(&me->super, GUI_DUMP_REQ_SIG);
-    /* The answers to the volume this AO asks for (gui_vol_answer()) and to
-     * every `zone` request (gui_zone_answer()). */
+    /* The answers to the volume this AO asks for (gui_vol_answer()), to
+     * every `off_after` request (gui_off_after_answer()) and to every `zone`
+     * request (gui_zone_answer()). */
     QActive_subscribe(&me->super, CONFIG_ANS_SIG);
     QActive_subscribe(&me->super, TOUCH_EVT_SIG);
     /* The two listings are not subscribed: their pages are posted to the AO
@@ -32306,6 +32934,7 @@ static QState Gui_initial(Gui * const me, void const * const par)
     QActive_subscribe(&me->super, APP_FLASH_PROGRESS_SIG);
     QActive_subscribe(&me->super, APP_FLASH_DONE_SIG);
     QActive_subscribe(&me->super, APP_FLASH_FAIL_SIG);
+    QActive_subscribe(&me->super, APP_ERASE_DONE_SIG);
 #if CONFIG_KODE_TEST_DOT
     /* AO_TestDot's screens and patterns: the E5 test takes the glass. */
     QActive_subscribe(&me->super, TEST_DOT_SCREEN_REQ_SIG);
@@ -32404,7 +33033,7 @@ static QState Gui_initial(Gui * const me, void const * const par)
      * Ask for the announcement again rather than waiting for one that already
      * happened - the whole reason this component can start whenever it likes. */
     display_state_request();
-    /* Kody's pack is read while the panel comes up (Luismi, 5-nov): its 230 ms
+    /* Kody's pack is read while the panel comes up: its 230 ms
      * no longer come after the panel's. His wake-up waits for it,
      * CONFIG_KGUI_ASSETS_WAIT_MS at most, counted from here
      * (gui_face_kody_tick()). */
@@ -32511,7 +33140,7 @@ static QState Gui_waiting(Gui * const me, QEvt const * const e)
                  * the lists arrive while it is up. Back from an app the first
                  * frame is Apps instead, and waits for the installed list
                  * (Gui_returning). */
-                /* Nothing is lit until it is whole (Luismi, 5-nov): the face with
+                /* Nothing is lit until it is whole: the face with
                  * its scene and Kody standing in it, Apps with its rows. */
                 me->first_hold    = true;
                 me->first_hold_ms = khal_time_ms();
@@ -32623,6 +33252,7 @@ static void gui_settings_ask(void)
 {
     display_state_request();
     gui_vol_ask();
+    gui_off_after_ask();
 #if CONFIG_KODEOS_WIFI
     wifi_state_request();
 #if CONFIG_KODEOS_CHANNEL
@@ -32816,7 +33446,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             uint32_t next = KODE_GUI_TICK_MS;
 
             gui_first_hold_tick(me);
-            if ( (!kgui_return_holds(&me->back)) && (!me->first_hold) )
+            if ( (!kgui_return_holds(&me->back)) && (!me->first_hold) && (!me->disp_row) )
             {
                 uint32_t const flushes = me->flushes;
                 uint32_t const t0      = gui_now_us();
@@ -33177,6 +33807,13 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             status = Q_HANDLED();
             break;
         }
+        case APP_ERASE_DONE_SIG: {
+            /* The end of an erase, whoever asked for it: the Removing card's
+             * answer, and the moment an app that left is forgotten. */
+            gui_remove_ended(me, Q_EVT_CAST(AppEraseDoneEvt));
+            status = Q_HANDLED();
+            break;
+        }
         case APP_FLASH_DONE_SIG: {
             AppFlashDoneEvt const * const d = Q_EVT_CAST(AppFlashDoneEvt);
 
@@ -33200,10 +33837,15 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             }
             else
             {
-                char t[48];
+                /* A done that names no app - the C5's image, a park in the
+                 * mailbox - has nothing to announce. */
+                if ( '\0' != d->name[0] )
+                {
+                    char t[GUI_NOTICE_BYTES];
 
-                (void)snprintf(t, sizeof(t), "%.32s is ready", d->name);
-                gui_visit(me, GUI_VISIT_NOTICE, t);
+                    (void)snprintf(t, sizeof(t), "%.32s is ready", d->name);
+                    gui_visit(me, GUI_VISIT_NOTICE, t);
+                }
                 /* installed[] is stale the instant a write finishes: the
                  * directory just gained (or replaced) an entry. Ask both
                  * owners again rather than guess; the launcher repaints when
@@ -33368,12 +34010,23 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
         case DISPLAY_TEST_SIG: {
-            /* And the `display` row, answered on the same two buttons. There
-             * is no line to write - AO_Display drops every flush while the
-             * row has the glass - so the state is taken for the pad alone. */
-            if ( Q_EVT_CAST(DisplayTestEvt)->phase == DISPLAY_TEST_ASK )
+            /* And the `display` row, answered on the same two buttons. It
+             * opens with the glass still ours, for the line that says what
+             * the fields will ask. From its first question no pass draws
+             * until the row ends: AO_Display drops every flush, LVGL draws
+             * straight into the panel's framebuffers, and a dropped flush
+             * has already drawn Kody's wheel into the one on the glass. */
+            uint8_t const phase = Q_EVT_CAST(DisplayTestEvt)->phase;
+            if ( DISPLAY_TEST_INTRO == phase )
+            {
+                gui_show_display_intro();
+                gui_test_take(me);
+                status = Q_TRAN(&Gui_btn_test);
+            }
+            else if ( DISPLAY_TEST_ASK == phase )
             {
                 gui_test_take(me);
+                me->disp_row = true;
                 status = Q_TRAN(&Gui_btn_test);
             }
             else
@@ -33514,8 +34167,7 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             gui_cc_paint(me);
             gui_face_pile_paint(me);
             /* The critical card rises once per entry into critical. */
-            gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state),
-                              charging);
+            gui_battery_check(me, ((uint8_t)GUI_SET_BAT_CRIT == me->bat_state));
             if ( GUI_SHEET_BAT == me->sheet )
             {
                 /* A rebuild only when the SHAPE moved - the cable, the
@@ -33564,10 +34216,15 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                  * the glass changes the answer, so the note has to follow. */
                 gui_sheet_refill(me);
             }
-            else if ( (GUI_SHEET_BATTERY == me->sheet)
-                     && ((was_vbus != me->vbus) || (was_soc != me->soc)) )
+            else if ( (GUI_SHEET_BATTERY == me->sheet) && me->vbus )
             {
-                /* The critical card says the charge and whether the cable is in. */
+                /* The critical card asked for the cable, and here it is. */
+                KLOG_N(TAG, "battery: the cable is in; the critical card closes");
+                gui_sheet_close(me);
+            }
+            else if ( (GUI_SHEET_BATTERY == me->sheet) && (was_soc != me->soc) )
+            {
+                /* The critical card says the charge. */
                 gui_sheet_refill(me);
             }
             else
@@ -33758,6 +34415,12 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
 #endif
+        case NET_HTTP_RSP_SIG: {
+            /* The one HTTP question this AO asks: the update service's. */
+            gui_os_answer(me, Q_EVT_CAST(NetHttpRspEvt));
+            status = Q_HANDLED();
+            break;
+        }
 #if CONFIG_KODEOS_WIFI
         case WIFI_STATE_SIG: {
             WifiStateEvt const * const w = Q_EVT_CAST(WifiStateEvt);
@@ -33801,6 +34464,8 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                 me->scan_out      = false;
                 me->scan_answered = false;
             }
+            bool const joined = got_ip && (!me->wifi_linked);
+
             me->wifi_linked = ((uint8_t)KDRV_WIFI_GOT_IP == w->state);
             me->wifi_rssi   = w->rssi;
             (void)snprintf(me->wifi_ssid, sizeof(me->wifi_ssid), "%s", w->ssid);
@@ -33830,6 +34495,16 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             }
             /* And the keypad, whose join this may be the answer to. */
             gui_kbd_wifi_state(me, w);
+            /* About's update row reads the link, and an address that
+             * arrives under that page is the one its question waited for. */
+            if ( (GUI_SHEET_ABOUT == me->sheet) && (!same) )
+            {
+                if ( joined )
+                {
+                    gui_os_ask(me, "Wi-Fi");
+                }
+                gui_sheet_refill(me);
+            }
             status = Q_HANDLED();
             break;
         }
@@ -34088,16 +34763,21 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                     on = me->ble_on;
                 }
             }
+            bool const linked = ((uint8_t)KDRV_BLE_CONNECTED == b->state);
             bool const same = (on == me->ble_on) && (adv == me->adv_on)
                               && (b->console == me->ble_console)
                               && (b->bonds == me->ble_bonds)
-                              && (b->pair_open == me->ble_pair_open);
+                              && (b->pair_open == me->ble_pair_open)
+                              && (b->pair_wait == me->ble_pair_wait)
+                              && (linked == me->ble_linked);
 
             me->ble_on        = on;
             me->adv_on        = adv;
             me->ble_console   = b->console;
             me->ble_bonds     = b->bonds;
             me->ble_pair_open = b->pair_open;
+            me->ble_pair_wait = b->pair_wait;
+            me->ble_linked    = linked;
             /* The circle answers the switch and nothing else: advertising and
              * an attached central are traffic, not a switch, and they belong
              * to the Bluetooth sheet. The one exception is the blink, and
@@ -34135,10 +34815,12 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
         case CONFIG_ANS_SIG: {
-            /* The speaker's level, asked on every entry into the control
-             * centre (gui_vol_ask()), and the zone AO_Boot answers
+            /* The speaker's level and the time asleep before OFF, asked on
+             * every entry into the control centre (gui_vol_ask(),
+             * gui_off_after_ask()), and the zone AO_Boot answers
              * (gui_zone_answer()). Every other answer is let go. */
             gui_vol_answer(me, Q_EVT_CAST(KodeConfigAnsEvt));
+            gui_off_after_answer(me, Q_EVT_CAST(KodeConfigAnsEvt));
             gui_zone_answer(me, Q_EVT_CAST(KodeConfigAnsEvt));
             status = Q_HANDLED();
             break;
@@ -35082,13 +35764,13 @@ static QState gui_awake_events(Gui * const me, QEvt const * const e)
             break;
         }
         case GUI_LAUNCHER_SIG: {
-            /* The unlock, the way the hand asked for it (Luismi, 4-nov): a
+            /* The unlock, the way the hand asked for it: a
              * swipe takes the face out to its own side, the pad's right to
              * the left as Apps comes in from the right, and a tap or the top
              * button fade Apps in where the face was (the in-place growth
              * of GUI_CURTAIN_FACE_GROW), a door with no inverse. The door
              * is taken when the motion lands (gui_curtain_arrive()). */
-            /* One way in, whatever asked (Luismi, 5-nov): a fade in place. */
+            /* One way in, whatever asked: a fade in place. */
             GuiCurtainKind const kind = GUI_CURTAIN_FACE_GROW;
 
             /* Apps comes in on its rail, and the shelf's discs come in one
@@ -35280,7 +35962,7 @@ static QState Gui_rest(Gui * const me, QEvt const * const e)
             }
             if ( b->pressed && me->vbus )
             {
-                /* On a cable any button wakes it at once (Luismi, 9-nov). */
+                /* On a cable any button wakes it at once. */
                 gui_press_time(me, true);
                 me->wake_btn = b->id;
                 gui_door_log("rest", "face", GUI_WHY_WAKE_CABLE);
@@ -36156,11 +36838,61 @@ static QState gui_sheet_hand_up(Gui * const me, QEvt const * const e,
 }
 
 /**
+ * @brief Ask for the page a system card covered, as the card closes.
+ *
+ * Posted, like every sheet: the card leaves for its host first (its exit
+ * runs whole), and the page is opened from there as a tap on its circle or
+ * its row would open it, at its top. A page that is a list of More's
+ * (gui_sheet_list_page()) opens only over More, so More is asked first and
+ * the page over it.
+ *
+ * @param me The AO, its system card still up.
+ */
+static void gui_sheet_reopen(Gui * const me)
+{
+    GuiSheet const            under = me->sheet_under;
+    GuiListPage const * const list  = gui_sheet_list_page(me, under);
+
+    KLOG_I(TAG, "sheet closed: %s (back to %s)",
+           gui_sheet_kind_name(me->sheet), gui_sheet_kind_name(under));
+    if ( NULL != list )
+    {
+        gui_sheet_open_kind(me, list->page);
+    }
+    gui_sheet_open_kind(me, under);
+}
+
+/**
+ * @brief The page a sheet's close turns the card back into.
+ *
+ * A list of choices is its page's (s_list_pages), wherever a page can stand
+ * under it. Over the face none can: the face's yellow pill opens its list
+ * from nowhere (gui_face_prompt_open()), so that list has no page to go back
+ * to and closes like any other card.
+ *
+ * @param me   The AO.
+ * @param home The screen the sheet stands on.
+ * @return The list's row of s_list_pages, or NULL for a sheet that leaves.
+ */
+static const GuiListPage *gui_sheet_back_page(Gui const * const me,
+                                              QStateHandler home)
+{
+    const GuiListPage *list = NULL;
+
+    if ( Q_STATE_CAST(&Gui_awake) != home )
+    {
+        list = gui_sheet_list_page(me, me->sheet);
+    }
+    return list;
+}
+
+/**
  * @brief Take the sheet away, as the bottom button's release does.
  *
  * A list of choices goes back to the page it opened from, and the card stays
  * up (risen again, when a finger had taken it down); every other sheet leaves
  * for its host: up to the superstate, which does not re-run the host's entry.
+ * A list with no page under it leaves too (gui_sheet_back_page()).
  * The bottom button and a drag down on a card's header close this way.
  *
  * @param me   The AO.
@@ -36169,7 +36901,7 @@ static QState gui_sheet_hand_up(Gui * const me, QEvt const * const e,
  */
 static QState gui_sheet_leave(Gui * const me, QStateHandler home)
 {
-    GuiListPage const * const list = gui_sheet_list_page(me, me->sheet);
+    GuiListPage const * const list = gui_sheet_back_page(me, home);
     QState                    status;
 
     if ( NULL != list )
@@ -36200,7 +36932,7 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
         {
             row = 0U;
         }
-        /* Back to the page as it was left, still (Luismi, 5-nov): nothing
+        /* Back to the page as it was left, still: nothing
          * scrolls to the row. */
         if ( 0U < me->page_scroll_n )
         {
@@ -36216,7 +36948,7 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
             gui_sheet_select(me, row);
         }
         gui_sheet_rise(me);
-        /* Out of the keypad at once, as it came in (Luismi, 5-nov). */
+        /* Out of the keypad at once, as it came in. */
         if ( !from_keypad )
         {
             gui_sheet_level_fade(me);
@@ -36226,7 +36958,13 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
     else
     {
         /* Up to the superstate: the screen underneath is already
-         * there, and going up does not re-enter it. */
+         * there, and going up does not re-enter it. A system card that
+         * covered a settings page asks for it as it goes. */
+        if ( gui_sheet_is_system(me->sheet) && gui_sheet_is_page(me->sheet_under)
+            && (Q_STATE_CAST(&Gui_settings) == home) )
+        {
+            gui_sheet_reopen(me);
+        }
         status = Q_TRAN(home);
     }
     return status;
@@ -36285,6 +37023,8 @@ static void gui_sheet_ask_first(Gui * const me)
     me->sheet_ask = true;
     if ( GUI_SHEET_ABOUT == me->sheet )
     {
+        /* The update service: this page is where its answer shows. */
+        gui_os_ask(me, "About");
         storage_request(KDRV_MEDIUM_SD, STORAGE_OP_INFO);
 #if CONFIG_KODEOS_RADIO
         radio_state_request();
@@ -36331,7 +37071,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
      * shell's for `gui` - at most 11 characters, all GuiStateEvt.state
      * carries - the host's for `gui` once the card has gone, and the
      * screen's for the log. */
-    bool const  over_face = (home == Q_STATE_CAST(&Gui_awake));
+    bool const  over_face = (Q_STATE_CAST(&Gui_awake) == home);
     const char *shell     = "sheet_grid";
     const char *host      = "settings";
     const char *screen    = "settings grid";
@@ -36343,7 +37083,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
         host   = "face";
         screen = "face";
     }
-    else if ( home == Q_STATE_CAST(&Gui_browsing) )
+    else if ( Q_STATE_CAST(&Gui_browsing) == home )
     {
         shell  = "sheet_home";
         host   = "browsing";
@@ -36508,7 +37248,8 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 gui_kbd_forget(me);
             }
 #endif
-            me->sheet = GUI_SHEET_NONE;
+            me->sheet       = GUI_SHEET_NONE;
+            me->sheet_under = GUI_SHEET_NONE;
             me->rm_busy = false;
             /* A lock belongs to the sheet that declared it, and the sheet is
              * gone: whatever rises next says for itself whether it can be
@@ -36533,7 +37274,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 /* The pad is refused here for the reason gui_sheet_navigate()
                  * gives, and a held bottom button is the pad. The Removing
                  * card is the one locked card home may leave: the erase is
-                 * AO_AppMgr's by then, and the list says the rest. */
+                 * AO_AppMgr's by then, and its end is taken with no card up. */
                 (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
                 status = Q_HANDLED();
             }
@@ -36546,7 +37287,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                  * refused out loud: the press was never meant for the card. */
                 status = Q_HANDLED();
             }
-            else if ( home == Q_STATE_CAST(&Gui_settings) )
+            else if ( Q_STATE_CAST(&Gui_settings) == home )
             {
                 /* Over the grid, home is a screen away and that door is the
                  * host's: its handler owns the curtain, and the curtain's
@@ -36569,10 +37310,10 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 if ( GUI_SHEET_REMOVING == me->sheet )
                 {
                     KLOG_N(TAG, "remove: home leaves the wait for %s; the erase "
-                                "is AO_AppMgr's and the list says the rest",
+                                "is AO_AppMgr's and its end is still taken",
                            me->rm_name);
                 }
-                if ( home == Q_STATE_CAST(&Gui_browsing) )
+                if ( Q_STATE_CAST(&Gui_browsing) == home )
                 {
                     me->sheet_locked = false;
                     gui_level_home(me);
@@ -36623,8 +37364,8 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 {
                     me->page_scroll_n = 0U;
                 }
-                else if ( me->page_scroll_n < (uint8_t)(sizeof(me->page_scroll)
-                                                       / sizeof(me->page_scroll[0])) )
+                else if ( (uint8_t)(sizeof(me->page_scroll)
+                                    / sizeof(me->page_scroll[0])) > me->page_scroll_n )
                 {
                     /* The page stands where it stood when this one goes back. */
                     me->page_scroll[me->page_scroll_n] = lv_obj_get_scroll_y(me->sheet_body);
@@ -36786,7 +37527,8 @@ static QState Gui_btn_test(Gui * const me, QEvt const * const e)
     switch ( e->sig )
     {
         case Q_EXIT_SIG: {
-            me->screen = NULL;
+            me->screen   = NULL;
+            me->disp_row = false;
             status = Q_HANDLED();
             break;
         }
@@ -36838,8 +37580,15 @@ static QState Gui_btn_test(Gui * const me, QEvt const * const e)
             {
                 status = Q_TRAN(gui_test_home(me));
             }
+            else if ( DISPLAY_TEST_INTRO == phase )
+            {
+                /* The row may follow another on this screen. */
+                gui_show_display_intro();
+                status = Q_HANDLED();
+            }
             else
             {
+                me->disp_row = true;
                 status = Q_HANDLED();
             }
             break;
@@ -37403,6 +38152,11 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
 
     switch ( e->sig )
     {
+        case Q_EXIT_SIG: {
+            me->disp_row = false;
+            status = Q_HANDLED();
+            break;
+        }
         case Q_ENTRY_SIG: {
             s_gui_state = "selftest";
             me->bot_hold = false;
@@ -37436,7 +38190,7 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
             break;
         }
         case AUTOTEST_HOLD_SIG: {
-            if ( Q_EVT_CAST(AutotestHoldEvt)->client == AUTOTEST_CLIENT_GUI )
+            if ( AUTOTEST_CLIENT_GUI == Q_EVT_CAST(AutotestHoldEvt)->client )
             {
                 me->test_held = true;
                 gui_test_say("Now we need you\nTOP to continue");
@@ -37483,8 +38237,22 @@ static QState Gui_selftest(Gui * const me, QEvt const * const e)
             break;
         }
         case DISPLAY_TEST_SIG: {
-            /* Nothing to write: AO_Display drops every flush while its row
-             * has the glass, and the colour on it is the question. */
+            /* The line goes up on the opening screen; from the first
+             * question the colour on the glass is the question, and no pass
+             * draws until the row ends (see Gui_running). */
+            uint8_t const phase = Q_EVT_CAST(DisplayTestEvt)->phase;
+            if ( DISPLAY_TEST_INTRO == phase )
+            {
+                gui_show_display_intro();
+            }
+            else if ( DISPLAY_TEST_DONE == phase )
+            {
+                me->disp_row = false;
+            }
+            else
+            {
+                me->disp_row = true;
+            }
             status = Q_HANDLED();
             break;
         }

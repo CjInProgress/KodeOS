@@ -47,7 +47,7 @@ _Static_assert((2 * KGUI_ROW_MID) == KGUI_ROW_H,
 
 /* ---- The rail ------------------------------------------------------------- */
 
-#define KGUI_LIST_FIRST_Y   72   /**< A list that fills the glass: its first row's middle where it starts (Luismi, 5-nov). */
+#define KGUI_LIST_FIRST_Y   72   /**< A list that fills the glass: its first row's middle where it starts. */
 #define KGUI_LIST_PULL_BAND 44   /**< A drag down that starts this high on Apps always pulls Settings, wherever the list stands. */
 #define KGUI_SWIPE_EDGE_BAND KGUI_LIST_PULL_BAND /**< A press that lands this close to the glass's top or bottom edge may be landed again past the edge's first samples: the pull band, at both edges. */
 #define KGUI_EDGE_SETTLE_PX 40   /**< How far from where it came down such a press is landed again when its first samples went the wrong way, in pixels. */
@@ -73,7 +73,7 @@ _Static_assert((2 * KGUI_ROW_MID) == KGUI_ROW_H,
 #define KGUI_SHELF_PITCH        112   /**< From one disc's middle to the next one's, in pixels: KGUI_ROW_PITCH. */
 #define KGUI_SHELF_MID_X        205   /**< The shelf's middle: the glass's. */
 #define KGUI_SHELF_FULL_Y       (KGUI_RAIL_FOCUS_Y - KGUI_ROW_PITCH) /**< 139: the discs' middle with the first row on the focus line, whole. */
-#define KGUI_SHELF_TOP_Y        56    /**< The discs' middle where a root that fills the glass starts: the top of it (Luismi, 5-nov). */
+#define KGUI_SHELF_TOP_Y        56    /**< The discs' middle where a root that fills the glass starts: the top of it. */
 #define KGUI_SHELF_GONE_Y       45    /**< A middle this high, in pixels, shows nothing. */
 #define KGUI_SHELF_TAP_Y        50    /**< A disc whose middle is higher than this takes no tap. */
 #define KGUI_SHELF_HIT_PAD      12    /**< Each disc's touch reaches this far past it: 104 x 104. */
@@ -261,7 +261,7 @@ float kgui_rows_top_scroll_at(float v, float first_y);
 float kgui_rows_top_u_at(float v, float first_y);
 
 /**
- * @brief s(u) for a list that fills the glass (Luismi, 5-nov).
+ * @brief s(u) for a list that fills the glass.
  *
  * It starts with the first row at KGUI_LIST_FIRST_Y, not on the focus line, and
  * that is only where it starts: u under 0, down to the walk from there to the

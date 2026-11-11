@@ -55,7 +55,7 @@ void test_shelf_opa_fades_before_the_corner(void)
 void test_shelf_never_shows_in_the_corner(void)
 {
     /* No disc that shows at all reaches out of the corner's circle. */
-    for ( int32_t cy = KGUI_SHELF_FULL_Y; cy > -KGUI_RAIL_ICON; --cy )
+    for ( int32_t cy = KGUI_SHELF_FULL_Y; -KGUI_RAIL_ICON < cy; --cy )
     {
         if ( kgui_shelf_opa(cy) == 0U )
         {
@@ -66,10 +66,10 @@ void test_shelf_never_shows_in_the_corner(void)
             for ( uint8_t i = 0U; i < n; ++i )
             {
                 int32_t const x  = kgui_shelf_x(i, n);
-                int32_t const kx = (x < (WIDTH / 2)) ? CORNER : (WIDTH - CORNER);
+                int32_t const kx = ((WIDTH / 2) > x) ? CORNER : (WIDTH - CORNER);
 
                 TEST_ASSERT_TRUE(cy - DISC_R >= 0);
-                if ( (CORNER > cy) && (((CORNER > x) || (x > (WIDTH - CORNER)))) )
+                if ( (CORNER > cy) && (((CORNER > x) || ((WIDTH - CORNER) < x))) )
                 {
                     float const d = hypotf((float)(x - kx), (float)(cy - CORNER));
 
@@ -156,6 +156,32 @@ void test_recents_push_refuses_nothing_names(void)
     TEST_ASSERT_EQUAL_STRING("a", list);
 }
 
+/* An app that is removed leaves the recents: its name kept there would be
+ * what is left of it on the board. */
+void test_recents_drop_takes_one_name_out(void)
+{
+    char list[KGUI_RECENTS_LEN] = "chess\nduel\npop";
+
+    TEST_ASSERT_TRUE(kgui_recents_drop(list, "duel"));
+    TEST_ASSERT_EQUAL_STRING("chess\npop", list);
+    TEST_ASSERT_TRUE(kgui_recents_drop(list, "chess"));
+    TEST_ASSERT_EQUAL_STRING("pop", list);
+    TEST_ASSERT_TRUE(kgui_recents_drop(list, "pop"));
+    TEST_ASSERT_EQUAL_STRING("", list);
+}
+
+void test_recents_drop_of_a_name_not_there_changes_nothing(void)
+{
+    char list[KGUI_RECENTS_LEN] = "chess\nduel";
+
+    TEST_ASSERT_FALSE(kgui_recents_drop(list, "pop"));
+    TEST_ASSERT_FALSE(kgui_recents_drop(list, "ches"));
+    TEST_ASSERT_FALSE(kgui_recents_drop(list, ""));
+    TEST_ASSERT_FALSE(kgui_recents_drop(list, NULL));
+    TEST_ASSERT_FALSE(kgui_recents_drop(NULL, "chess"));
+    TEST_ASSERT_EQUAL_STRING("chess\nduel", list);
+}
+
 void test_recents_split_reads_what_nvs_held(void)
 {
     char    names[KGUI_SHELF_MAX][KGUI_SHELF_NAME_MAX];
@@ -187,6 +213,8 @@ int main(void)
     RUN_TEST(test_recents_push_order_and_no_repeats);
     RUN_TEST(test_recents_push_keeps_three);
     RUN_TEST(test_recents_push_refuses_nothing_names);
+    RUN_TEST(test_recents_drop_takes_one_name_out);
+    RUN_TEST(test_recents_drop_of_a_name_not_there_changes_nothing);
     RUN_TEST(test_recents_split_reads_what_nvs_held);
     return UNITY_END();
 }
