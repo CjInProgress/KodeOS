@@ -6,6 +6,7 @@ This file says which licence applies to each part of this repository. Read it be
 |---|---|---|
 | everything that this file does not name below | Kode | GPL-3.0-or-later, with the additional permission below |
 | `sdk/` | Kode and others | the file `NOTICE.md` of the SDK says it |
+| `components/kgui/kgui_kody_rest_data.c` | Kode | Creative Commons Attribution-ShareAlike 4.0: the drawings and animations of Kody, in the form of C code |
 | `components/kgui/fonts/*.c` | the DM Sans and Outfit families, converted to C | SIL Open Font License 1.1; the texts are `sdk/components/kui/fonts/assets/OFL-DMSans.txt` and `OFL-Outfit.txt` |
 
 ## The code of Kode
@@ -22,9 +23,11 @@ The file `LICENSE` holds the full text of the GNU General Public License, versio
 
 If you modify this Program, or any covered work, by linking or combining it with the RF Abstraction Layer (RFAL) and the ST25R3916 driver of STMicroelectronics (or a modified version of those libraries), containing parts covered by the terms of the STMicroelectronics SLA0051 licence, the licensors of this Program grant you additional permission to convey the resulting work. Corresponding Source for a non-source form of such a combination shall include the source code for the parts of RFAL and of the ST25R3916 driver used as well as that of the covered work.
 
-This permission applies only to the code of which Kode holds the copyright. Kode cannot give it for the code of another owner, and so it does not apply to QP/C.
-
 If you change the code of Kode, you can remove this permission from your version. Section 7 of the GNU General Public License allows this.
+
+### Trademarks, under GNU GPL version 3 section 7(e)
+
+This licence gives no right to use the names Kode, Kode Dot, kodeOS and Kody, or the character Kody, as trademarks. `TRADEMARKS.md` in the repository `kodediy/.github` says how you can use them.
 
 ## The bootloader
 
