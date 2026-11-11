@@ -72,6 +72,7 @@
 #include "kgui_return.h"   /* the first frame after an app, and how long it waits for the list */
 #include "kgui_welcome.h"  /* the landing on the face after Welcome */
 #include "kgui_wifi.h"     /* the radios' rows' words, and why a join failed */
+#include "kgui_trim.h"     /* a name without the spaces at its ends */
 #include "kgui_syscard.h"  /* the words of the stopped, critical and factory reset cards, and their decisions */
 #include "kgui_sysscreen.h" /* the frame of a system screen: protagonist, figure, words, pill */
 #if CONFIG_KODE_TEST_DOT
@@ -1402,8 +1403,13 @@ typedef enum {
 #define GUI_TAG_BLE_CONSOLE   41U   /* a central is on the console          */
 #define GUI_TAG_BLE_BONDS     42U   /* how many peers are remembered        */
 #define GUI_BLE_PREFIX        "KODE "  /* What the apps look for: always there. */
+#define GUI_BLE_WORDS_MAX     15U      /* What a name holds after it. */
 #define GUI_BLE_NAME_MAX      20U      /* The whole name; the scan response holds 29. */
+#define GUI_BLE_CHAR_FIRST    0x20U    /* The first byte a name may hold: the space. */
+#define GUI_BLE_CHAR_DEL      0x7FU    /* DEL, a control byte above the printable ones. */
 #define GUI_NVS_KEY_BLE_NAME  "blename"
+#define GUI_CONFIG_KEY_BLE_NAME "ble_name" /* `config`'s name for kgui/blename. */
+#define GUI_BLE_NAME_NONE     "-"      /* `ble_name`'s value for no name: the serial. */
 #define GUI_TAG_BLE_NAME      44U   /* the name it shows                    */
 #define GUI_TAG_BLE_FORGET    43U   /* forget every one of them             */
 #define GUI_TAG_BLE_PAIR      45U   /* show the board, so a new one pairs   */
@@ -3185,6 +3191,7 @@ static void gui_time_follow(Gui * const me);
 static uint32_t gui_time_minute(Gui const * const me, struct tm *out);
 static const char *gui_ble_name_shown(Gui const * const me);
 static void gui_ble_name_send(Gui const * const me);
+static void gui_ble_name_config(Gui * const me, KodeConfigReqEvt const * const r);
 static bool gui_row_cut(Gui const * const me, int32_t cy, kgui_rail_t const *edge);
 static void gui_vol_motor(Gui const * const me);
 static void gui_first_hold_tick(Gui * const me);
@@ -23435,6 +23442,97 @@ static void gui_ble_name_send(Gui const * const me)
 }
 
 /**
+ * @brief Whether words can follow the prefix in the name: no control byte.
+ *
+ * Bytes of 0x80 and over pass, so a name may be UTF-8.
+ *
+ * @param w The words, terminated.
+ * @return true when none is a control byte.
+ */
+static bool gui_ble_words_ok(const char *w)
+{
+    bool ok = true;
+
+    for ( size_t i = 0U; ok && ('\0' != w[i]); ++i )
+    {
+        uint8_t const c = (uint8_t)w[i];
+
+        ok = (GUI_BLE_CHAR_FIRST <= c) && (GUI_BLE_CHAR_DEL != c);
+    }
+    return ok;
+}
+
+/**
+ * @brief Answer `config key="ble_name"`, changing the name first when asked.
+ *
+ * The board advertises GUI_BLE_PREFIX and the words, and the radio is told at
+ * once (gui_ble_name_send()). The spaces at either end of the words are
+ * dropped. GUI_BLE_NAME_NONE goes back to the serial: the console takes no
+ * empty string. Words of more than GUI_BLE_WORDS_MAX bytes, or with a control
+ * byte, are refused. The value is the words without the prefix, or
+ * GUI_BLE_NAME_NONE.
+ *
+ * @param me The AO.
+ * @param r  The request.
+ */
+static void gui_ble_name_config(Gui * const me, KodeConfigReqEvt const * const r)
+{
+    const char   *value = GUI_BLE_NAME_NONE;
+    kode_status_t st    = KODE_OK;
+
+    if ( r->set )
+    {
+        char         words[KODE_CONFIG_VALUE_MAX + 1U];
+        size_t const n = kgui_trim_spaces(r->s, words, sizeof(words));
+
+        if ( strcmp(words, GUI_BLE_NAME_NONE) == 0 )
+        {
+            me->ble_name[0] = '\0';
+            (void)khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME);
+        }
+        else if ( (0U == n) || (GUI_BLE_WORDS_MAX < n) || !gui_ble_words_ok(words) )
+        {
+            KLOG_D(TAG, "ble_name: refused - 1 to %u bytes, no control byte, "
+                        "or " GUI_BLE_NAME_NONE, (unsigned)GUI_BLE_WORDS_MAX);
+            st = KODE_DENIED;
+        }
+        else
+        {
+            /* gui_ble_words_ok() and the check above held the words to
+             * GUI_BLE_WORDS_MAX. */
+            (void)snprintf(me->ble_name, sizeof(me->ble_name), "%s%.*s",
+                           GUI_BLE_PREFIX, (int)GUI_BLE_WORDS_MAX, words);
+            if ( khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME,
+                                  me->ble_name) != KODE_OK )
+            {
+                KLOG_W(TAG, "the store refused kgui/%s; the name holds until "
+                            "the next reboot", GUI_NVS_KEY_BLE_NAME);
+            }
+        }
+        if ( KODE_OK == st )
+        {
+            const char *said = "the serial";
+
+            if ( '\0' != me->ble_name[0] )
+            {
+                said = me->ble_name;
+            }
+            KLOG_N(TAG, "bluetooth name: '%s'", said);
+            gui_ble_name_send(me);
+            if ( GUI_SHEET_BLE == me->sheet )
+            {
+                gui_sheet_refill(me);
+            }
+        }
+    }
+    if ( '\0' != me->ble_name[0] )
+    {
+        value = gui_ble_name_shown(me);
+    }
+    (void)kode_config_answer(&me->super, r, st, '\0' != me->ble_name[0], value);
+}
+
+/**
  * @brief The Bluetooth sheet: the switch, then what the radio will admit to.
  *
  * AND THAT IS NOT MUCH, which is the whole design of this page. The stack
@@ -23501,7 +23599,7 @@ static void gui_ble_fill(Gui * const me)
 
     /* The name to look for in the app: the serial, as it is
      * advertised, never the printed form; a stored one without its prefix. A
-     * reading: nothing on the glass changes it. */
+     * reading: `config key="ble_name"` changes it. */
     if ( gui_sheet_row(me, "Visible as", gui_ble_name_shown(me),
                       KUI_COLOR_SURFACE, &kui_glyph_info, NULL) != NULL )
     {
@@ -31653,6 +31751,12 @@ static void gui_config(Gui * const me, KodeConfigReqEvt const * const r)
     {
         gui_sleep_config(me, r);
     }
+#if CONFIG_KODEOS_BLE
+    else if ( strcmp(r->key, GUI_CONFIG_KEY_BLE_NAME) == 0 )
+    {
+        gui_ble_name_config(me, r);
+    }
+#endif
     else if ( kgui_prefs_is_key(r->key) )
     {
         gui_prefs_config(me, r);
@@ -32621,12 +32725,15 @@ void kgui_start(void)
           .enums = kgui_haptic_words,
           .n_enums = (uint8_t)KGUI_HAPTIC_LEVELS },
         { .name = KGUI_PREFS_KEY_USB,   .type = KODE_TYPE_BOOL },
+#if CONFIG_KODEOS_BLE
+        { .name = GUI_CONFIG_KEY_BLE_NAME, .type = KODE_TYPE_STRING },
+#endif
     };
 
     if ( KODE_CONFIG_ADD(AO_Gui, KODE_CONFIG_MARGIN, s_config) != KODE_OK )
     {
-        KLOG_E(TAG, "lock, scene, clock, kody_sleep and the two "
-                    "interface settings were refused; see the line above");
+        KLOG_E(TAG, "lock, scene, clock, kody_sleep, the two interface "
+                    "settings and ble_name were refused; see the line above");
     }
 #endif
 }
