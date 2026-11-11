@@ -11,6 +11,7 @@
 
 #include "kbsp_board.h"
 #include "kui.h"
+#include "kgui_dtext.h"
 #include "kgui_icon.h"
 #include "kgui_list.h"
 
@@ -52,9 +53,6 @@
 #define DT_ASK_TITLE_A  "Remove "                  /**< The question's title before the name. */
 #define DT_ASK_TITLE_B  "?"                        /**< ...and after it. */
 #define DT_ASK_TITLE_MAX 64U                       /**< Room for the question's title: the words, a 31 character name and the mark. */
-#define DT_ASK_LEAVES   "It leaves the Dot."      /**< The caption's first line. */
-#define DT_ASK_COPY     "\nThe SD card copy stays."   /**< ...and its second, when a copy stays. */
-#define DT_ASK_CAPTION_MAX 64U                     /**< Room for the caption. */
 #define DT_WAIT_TITLE   "Removing"                 /**< The wait's title. */
 
 /** What the pages are made of. */
@@ -551,7 +549,7 @@ void kgui_details_info(const kgui_details_spec_t *spec)
     lv_obj_set_hidden(s_dt.info, false);
 }
 
-void kgui_details_ask(const char *name, bool copy)
+void kgui_details_ask(const char *name, bool files)
 {
     if ( !s_dt.open )
     {
@@ -559,20 +557,17 @@ void kgui_details_ask(const char *name, bool copy)
     }
     dt_hide_all();
     char title[DT_ASK_TITLE_MAX];
-    char caption[DT_ASK_CAPTION_MAX];
+    char caption[KGUI_DTEXT_CAPTION_MAX];
 
     (void)snprintf(title, sizeof(title), DT_ASK_TITLE_A "%s" DT_ASK_TITLE_B, dt_text(name));
-    (void)snprintf(caption, sizeof(caption), DT_ASK_LEAVES);
-    if ( copy )
-    {
-        (void)snprintf(caption, sizeof(caption), DT_ASK_LEAVES DT_ASK_COPY);
-    }
+    kgui_dtext_remove_caption(files, caption, sizeof(caption));
     {
         int32_t const line = (int32_t)lv_font_get_line_height(&kui_font_display_40);
         lv_point_t    size;
         lv_point_t    said;
         int32_t       rows;
         int32_t       top;
+        int32_t       foot;
 
         lv_text_get_size(&size, title, &kui_font_display_40, 0, 0, DT_ASK_TITLE_W, LV_TEXT_FLAG_NONE);
         rows = (size.y + (line / 2)) / line;
@@ -585,10 +580,17 @@ void kgui_details_ask(const char *name, bool copy)
             rows = 1;
         }
         top = DT_ASK_TITLE_Y - (((rows - 1) * line) / 2);
+        lv_text_get_size(&said, caption, &kui_font_body, 0, 0, DT_ASK_TITLE_W, LV_TEXT_FLAG_NONE);
+        /* A title of two lines over a caption of two would run under the
+         * pill: the block is lifted by what does not fit above it. */
+        foot = top + (rows * line) + DT_ASK_GAP + said.y;
+        if ( (DT_ASK_PILL_Y - DT_ASK_GAP) < foot )
+        {
+            top -= foot - (DT_ASK_PILL_Y - DT_ASK_GAP);
+        }
         lv_label_set_text(s_dt.ask_title, title);
         lv_obj_set_height(s_dt.ask_title, rows * line);
         lv_obj_set_y(s_dt.ask_title, top);
-        lv_text_get_size(&said, caption, &kui_font_body, 0, 0, DT_ASK_TITLE_W, LV_TEXT_FLAG_NONE);
         lv_label_set_text(s_dt.ask_caption, caption);
         lv_obj_set_size(s_dt.ask_caption, DT_ASK_TITLE_W, said.y);
         lv_obj_set_y(s_dt.ask_caption, top + (rows * line) + DT_ASK_GAP);

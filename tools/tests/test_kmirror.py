@@ -78,8 +78,7 @@ def main():
     # literal is hand-written in sdk/tests/host/cases/test_kmirror_proto.c,
     # and the duplication IS the mechanism: a vector generated from the C
     # would follow the C's bugs and one generated from here would follow this
-    # file's. tools/tests/test_mkkfw.sh makes the same argument about mkkfw.py's own
-    # header. Changing the wire format means changing both literals, on
+    # file's. Changing the wire format means changing both literals, on
     # purpose, and one of these two cases failing is what makes "on purpose"
     # happen.
     golden = bytes((0x34, 0x12,              # seq = 0x1234

@@ -52,6 +52,7 @@
 #include "kgui_haptic.h"   /* the interface's buzz: four effects, one call */
 #include "kgui_prefs.h"    /* the interface's two settings: keys, words, store */
 #include "kgui_scene_label.h" /* a scene's English words, for what the interface shows */
+#include "kgui_osrel.h"    /* kodeOS's own update: the service's answer and About's row */
 #include "kgui_keyboard.h" /* the keypad card: a password or a hidden name, by multitap */
 #include "kgui_screens.h" /* this component's own screens and subjects */
 #include "kgui_motion.h"   /* the launcher's rail and motions: Step, Glide, Rubber, Slide */
@@ -705,9 +706,9 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
 #define GUI_ROW_LIT        1U
 #define GUI_ROW_UNDRESSED  0xFFU
 
-/* The launcher's two levels (GuiStateEvt::level): the root, which holds the
- * groups and then the apps that belong to none, and one group's apps. */
-#define GUI_LEVEL_ROOT   KODE_GUI_LEVEL_ROOT   /* the groups, then the loose apps */
+/* The launcher's two levels (GuiStateEvt::level): the root, which holds All,
+ * the groups and then the apps whose group did not fit, and one group's apps. */
+#define GUI_LEVEL_ROOT   KODE_GUI_LEVEL_ROOT   /* All and the groups, then the loose apps */
 #define GUI_LEVEL_GROUP  KODE_GUI_LEVEL_GROUP  /* the apps of the group in me->group */
 
 /* A group row's selection name: this and the group's name. An app's own name
@@ -1078,10 +1079,9 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_HINT_ROOM_LOST  "No answer. Try again"           /**< What it says when AO_AppMgr does not answer. */
 #define GUI_HINT_TOO_BIG    "Too big for this Dot"           /**< What it says of an app that cannot fit the apps region. */
 #define GUI_LONG_PRESS_MS   KODE_BUTTON_HOLD_MS                  /**< A finger that stays on an app's row, or on the Wi-Fi or Bluetooth circle, this long, within KUI_GESTURE_TAP_PX of where it landed and with no claim, opens its details or its page: the time TOP held takes. */
-#define GUI_REMOVE_WAIT_MS  15000U                               /**< The longest the Removing card waits for AO_AppMgr to take the app off the list. */
+#define GUI_REMOVE_MARGIN_MS 5000U                               /**< What the Removing card waits past AO_AppMgr's own bound on AO_Storage. */
+#define GUI_REMOVE_WAIT_MS  (APPMGR_WIPE_MS + GUI_REMOVE_MARGIN_MS) /**< The longest the Removing card waits for AO_AppMgr to say the erase ended. */
 #define GUI_REMOVE_GUARD_MS 400U                                 /**< The question before Remove ignores its pill this long after it is written: a tap or a TOP release that opened or followed it is not an answer. */
-#define GUI_REMOVE_POLL_MS  1000U                                /**< How often the Removing card asks the apps again while the app is still listed. */
-#define GUI_HINT_REMOVE_FAILED "Still installed"                /**< What the Removing card says when the app does not leave the list in time. */
 #define GUI_PCT_FULL        100                              /**< One hundred percent: a level, a share of the glass. */
 
 /** @brief The auto-lock time of a board with nothing stored, in seconds: two
@@ -1244,6 +1244,31 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_OS_IMAGE  "kodeos.bin"
 
 /**
+ * @brief Where kodeOS asks which of its versions is the latest.
+ *
+ * Empty in a build that asks nobody: About's row then offers the card's
+ * image alone. The answer names a version and the link of its `.kfw`
+ * (kgui_osrel.h).
+ */
+#define GUI_OS_SERVICE        CONFIG_KGUI_OS_UPDATE_URL
+#define GUI_OS_SERVICE_NONE   1U         /**< sizeof an empty GUI_OS_SERVICE: its terminator alone. */
+#define GUI_OS_SERVICE_PLAIN  "http://"  /**< A service asked with no TLS: a bench's, whose release may be a plain link too. */
+#define GUI_OS_ALIGN          64U        /**< What the service's block in PSRAM is aligned to, in bytes. */
+#define GUI_HTTP_OK           200U       /**< The service answered with a release. */
+#define GUI_HTTP_NOT_FOUND    404U       /**< The service's answer when no release is published. */
+
+_Static_assert(sizeof(GUI_OS_SERVICE) <= KODE_NET_URL_MAX,
+               "the update service's URL must fit an HTTP ask");
+_Static_assert(KGUI_OSREL_URL_MAX <= KODE_FLASH_SRC_MAX,
+               "a release's link must fit an install's source");
+
+/** @brief What kodeOS keeps of its update service, in PSRAM. */
+typedef struct {
+    char         answer[KGUI_OSREL_ANSWER_MAX + 1U];  /**< The service's last answer as it came, and a terminator. Lent to AO_Net while a question is out. */
+    kgui_osrel_t rel;                                 /**< The newer release, while the check says there is one. */
+} GuiOsUpdate;
+
+/**
  * @brief The ESP32-C5's own firmware, which the factory's internal FAT carries.
  *
  * The radio coprocessor's image (`install dst=c5` writes it), never an app:
@@ -1321,7 +1346,8 @@ typedef enum {
     GUI_ASK_NONE = 0,   /**< Nothing is held back. */
     GUI_ASK_RUN,        /**< An installed app is run: its project name. */
     GUI_ASK_FLASH,      /**< A file is written, to be run once the edge has closed: its file name. */
-    GUI_ASK_OS          /**< kodeOS is updated from the card. */
+    GUI_ASK_OS,         /**< kodeOS is updated from the card. */
+    GUI_ASK_OS_NET      /**< kodeOS is updated to the release the service named. */
 } GuiAsk;
 
 /**
@@ -1392,7 +1418,7 @@ typedef enum {
 #define GUI_TAG_ABOUT_RADIO   60U   /* the C5's own firmware                */
 #define GUI_TAG_ABOUT_CARD    61U   /* the microSD, if there is one         */
 #define GUI_TAG_ABOUT_UPTIME  62U   /* how long this boot has lasted        */
-#define GUI_TAG_ABOUT_UPDATE  63U   /* write kodeos.bin from the card       */
+#define GUI_TAG_ABOUT_UPDATE  63U   /* update kodeOS: the card or the service */
 #define GUI_TAG_ABOUT_RESET   64U   /* ask for the factory reset            */
 #define GUI_TAG_ABOUT_TECH    65U   /* show or hide the technical rows      */
 #define GUI_TAG_KODY_UPDATE   66U   /* fetch Kody's official pack           */
@@ -1909,12 +1935,13 @@ typedef struct {
     int8_t    sel_idx;
     char      sel_name[KODE_APP_FILE_MAX];
 
-    /* THE LEVEL. The launcher shows its root, the groups and then the apps
-     * that belong to none (kgui_group_root()), or one group's apps
-     * (kgui_group_members()). A group is a view of the apps' first category,
-     * never data: it is derived in the pass that builds rows[], so an empty
-     * group cannot exist. group is the truth about where the launcher is;
-     * when the apps of it are gone the pass falls back to the root.
+    /* THE LEVEL. The launcher shows its root, All and the groups and then
+     * the apps whose group did not fit (kgui_group_root()), or one group's
+     * apps (kgui_group_members()). All is every app and a group is a view of
+     * the apps' first category, never data: both are derived in the pass that
+     * builds rows[], so an empty group cannot exist. group is the truth about
+     * where the launcher is; when the apps of it are gone the pass falls back
+     * to the root.
      *
      * The selection is kept by name for each level: sel_name for the level on
      * the glass, and sel_root for the root while a group is open, so going
@@ -2075,7 +2102,8 @@ typedef struct {
     uint32_t      rm_since_ms;              /**< When the erase was asked. */
     uint32_t      rm_ask_ms;                /**< When the question was written: its pill takes no answer for GUI_REMOVE_GUARD_MS. */
     bool          rm_busy;                  /**< An answer is on its way (the question's, or the erase): a second one is ignored until the card ends. */
-    uint32_t      rm_poll_ms;               /**< When the apps were last asked about. */
+    bool          rm_installed;             /**< It is an installed app; false for a file that is not installed. */
+    bool          rm_out;                   /**< The erase is with AO_AppMgr: its end is awaited, with the card up or not. */
 
     /* THE FACTORY RESET: the request that is out, and AO_Boot's answer as
      * the wait card reads it. */
@@ -2932,6 +2960,10 @@ typedef struct {
                                *   itself; 0 when it did not say. Not the
                                *   volume's size - a card is not obliged to
                                *   carry a filesystem that spans it.        */
+    GuiOsUpdate *os;         /**< The update service's answer and the release
+                               *   it named, in PSRAM: NULL until the first
+                               *   question, and when there was no room.    */
+    uint8_t  os_check;       /**< kgui_osrel_check_t: where the check stands. */
     uint8_t  write_what;     /**< kwrite_t: what the write on the glass is
                                *   and how it ends - the Opening sheet's
                                *   title, name and sentence, and the
@@ -3277,6 +3309,10 @@ static void gui_bat_refresh(Gui * const me);
 static void gui_about_fill(Gui * const me);
 static void gui_about_act(Gui * const me, uint16_t tag);
 static bool gui_os_image_on_card(Gui const * const me);
+static void gui_os_ask(Gui * const me, const char *why);
+static void gui_os_answer(Gui * const me, NetHttpRspEvt const * const r);
+static kgui_osrel_row_t gui_os_row(Gui const * const me);
+static const char *gui_os_version(Gui const * const me);
 static const char *gui_boot_reason_name(void);
 static void gui_uptime_text(char *dst, size_t cap);
 static void gui_sheet_open_kind(Gui * const me, GuiSheet kind);
@@ -3657,7 +3693,7 @@ static void on_shelf_pressed(lv_event_t *e);
 static void gui_list_finish(Gui * const me);
 static void gui_details_act(Gui * const me);
 static void gui_remove_go(Gui * const me);
-static void gui_remove_done(Gui * const me, bool gone);
+static void gui_remove_done(Gui * const me, uint8_t status);
 static void gui_remove_tick(Gui * const me);
 static void gui_long_press_tick(Gui * const me);
 static void gui_details_navigate(Gui * const me, kdrv_button_t b, bool pressed);
@@ -4009,7 +4045,7 @@ static void gui_dump(Gui * const me)
                        gui_sheet_kind_name(me->sheet), (unsigned)left);
             }
         }
-        if ( GUI_SHEET_REMOVING == me->sheet )
+        if ( me->rm_out )
         {
             KLOG_N(TAG, "  remove: %s asked %u ms ago", me->rm_name,
                    (unsigned)(khal_time_ms() - me->rm_since_ms));
@@ -4083,6 +4119,14 @@ static void gui_dump(Gui * const me)
                    me->sd_known ? (me->sd_mounted ? "mounted" : "absent")
                                 : "asking",
                    gui_os_image_on_card(me) ? "kodeos.bin" : "none");
+            /* And what its Software update row says. */
+            {
+                char words[KGUI_OSREL_TEXT_MAX];
+
+                kgui_osrel_row_text(gui_os_row(me), gui_os_version(me), words,
+                                    sizeof(words));
+                KLOG_N(TAG, "  update: %s", words);
+            }
         }
     }
 }
@@ -12648,9 +12692,10 @@ static int8_t gui_sheet_card_row(Gui const * const me)
  * the row's own model, and how it is drawn is the module's. This AO owns the
  * state around it - which sheet is up, what the buttons mean on it, what the
  * pill is worth - and posts, like everything that reaches an owner. The details
- * have one answer, Remove, and only for an installed app; it asks on a card of
- * its own, then the app is taken off by AO_AppMgr (gui_remove_go()) while a
- * locked card waits for the list to say so.
+ * have one answer, Remove, for an installed app and for a file that names its
+ * project; it asks on a card of its own, then AO_AppMgr takes everything of the
+ * app off the board (gui_remove_go()) while a locked card waits for the erase
+ * to say how it ended (APP_ERASE_DONE_SIG).
  */
 
 /**
@@ -12686,24 +12731,89 @@ static uint32_t gui_row_size_of(Gui const * const me, GuiRow const * const r)
 }
 
 /**
- * @brief Whether a copy of an installed app's image stays on the SD card.
+ * @brief Whether the list shows a file of an app, on either medium.
  *
- * What the question before Remove may promise: the file the launcher lists
- * for the same project, on the card, is not touched by the erase.
+ * What the question before Remove says goes too: the erase deletes every
+ * image file of the project, on the card and on the internal partition.
  *
  * @param me      The AO.
- * @param project The installed app's project name.
- * @return true when a listed file of that project is on the card.
+ * @param project The app's project name.
+ * @return true when a listed file is of that project.
  */
-static bool gui_remove_copy_stays(Gui const * const me, const char *project)
+static bool gui_remove_has_files(Gui const * const me, const char *project)
 {
-    bool stays = false;
+    bool found = false;
 
-    for ( uint8_t i = 0U; (i < me->entry_count) && !stays; ++i )
+    for ( uint8_t i = 0U; (i < me->entry_count) && !found; ++i )
     {
-        stays = me->entries[i].from_sd && (strcmp(me->entries[i].project, project) == 0);
+        found = (strcmp(me->entries[i].project, project) == 0);
     }
-    return stays;
+    return found;
+}
+
+/**
+ * @brief Whether Remove has something to name for a row.
+ *
+ * An installed app by its project name; a file that is not installed by the
+ * project its descriptor names, which is what the erase matches files by. A
+ * file that names none has no Remove.
+ *
+ * @param me The AO.
+ * @param r  The row: which model, and where in it.
+ * @return true when the row can be removed.
+ */
+static bool gui_row_removable(Gui const * const me, GuiRow const * const r)
+{
+    bool removable = false;
+
+    if ( GUI_ROW_INSTALLED == r->kind )
+    {
+        removable = true;
+    }
+    else if ( GUI_ROW_FILE == r->kind )
+    {
+        removable = ('\0' != me->entries[r->idx].project[0]);
+    }
+    else
+    {
+        /* A kind with no app behind it. */
+    }
+    return removable;
+}
+
+/**
+ * @brief Keep what the Remove cards say and what the erase names, from a row.
+ *
+ * @param me The AO.
+ * @param r  The row the details are about.
+ * @return true when the row can be removed and its names are kept.
+ */
+static bool gui_remove_name(Gui * const me, GuiRow const * const r)
+{
+    const char *project = NULL;
+
+    if ( GUI_ROW_INSTALLED == r->kind )
+    {
+        if ( gui_installed_has(me, me->installed[r->idx].name) )
+        {
+            project = me->installed[r->idx].name;
+        }
+    }
+    else if ( gui_row_removable(me, r) )
+    {
+        project = me->entries[r->idx].project;
+    }
+    else
+    {
+        /* Nothing to name. */
+    }
+    if ( NULL != project )
+    {
+        me->rm_installed = (GUI_ROW_INSTALLED == r->kind);
+        (void)snprintf(me->rm_name, sizeof(me->rm_name), "%s", project);
+        (void)snprintf(me->rm_label, sizeof(me->rm_label), "%s", gui_row_face_of(me, r)->name);
+    }
+    return NULL != project;
 }
 
 /**
@@ -12830,6 +12940,7 @@ static void gui_details_fill(Gui * const me)
         lv_color_t const      ground = gui_light_ground(face);
         kgui_details_spec_t   spec;
         char                  mono[3];
+        char                  own[KGUI_GROUP_NAME_MAX];
         char                  group[KGUI_GROUP_NAME_MAX];
         char                  meta[KGUI_DTEXT_META_MAX];
         char                  size[KGUI_DTEXT_SIZE_MAX];
@@ -12846,7 +12957,12 @@ static void gui_details_fill(Gui * const me)
         }
         gui_mono_letters(face, mono);
         spec.mono = mono;
-        kgui_group_title(face->category, group);
+        /* All is where every app is, not a category to say of one. */
+        group[0] = '\0';
+        if ( kgui_group_of(face->category, own) && (strcmp(own, KGUI_GROUP_ALL) != 0) )
+        {
+            kgui_group_title(own, group);
+        }
         kgui_dtext_meta(face->version, group, meta, sizeof(meta));
         kgui_dtext_size(gui_row_size_of(me, r), size, sizeof(size));
         built[0] = '\0';
@@ -12859,14 +12975,14 @@ static void gui_details_fill(Gui * const me)
         spec.size        = size;
         spec.built       = built;
         spec.description = face->description;
-        spec.removable   = (GUI_ROW_INSTALLED == r->kind);
+        spec.removable   = gui_row_removable(me, r);
         kgui_details_info(&spec);
         kgui_details_ring(me->pad);
     }
 }
 
 /**
- * @brief Write the question before Remove: who, and what stays.
+ * @brief Write the question before Remove: who, and what goes with it.
  *
  * @param me The AO.
  */
@@ -12881,7 +12997,7 @@ static void gui_remove_fill(Gui * const me)
         gui_sheet_close(me);
         return;
     }
-    kgui_details_ask(me->rm_label, gui_remove_copy_stays(me, me->rm_name));
+    kgui_details_ask(me->rm_label, gui_remove_has_files(me, me->rm_name));
     kgui_details_ring(me->pad);
 }
 
@@ -12900,7 +13016,7 @@ static void gui_removing_fill(Gui * const me)
         return;
     }
     /* NOTHING TO PRESS, and the card is what enforces it: no pad and no tap
-     * until the list says the app is gone, or the wait runs out. */
+     * until AO_AppMgr says the erase ended, or the wait runs out. */
     me->sheet_locked = true;
     kgui_details_wait(me->rm_label);
 }
@@ -12908,8 +13024,8 @@ static void gui_removing_fill(Gui * const me)
 /**
  * @brief The pill was pressed: the details ask, or the question is answered.
  *
- * On the details, an installed app's name is kept and the card turns into
- * the question; on the question, the erase goes (gui_remove_go()).
+ * On the details, the row's names are kept (gui_remove_name()) and the card
+ * turns into the question; on the question, the erase goes (gui_remove_go()).
  *
  * @param me The AO.
  */
@@ -12919,17 +13035,21 @@ static void gui_details_act(Gui * const me)
     {
         KLOG_D(TAG, "remove: an answer is on its way; this one is ignored");
     }
+    else if ( me->rm_out )
+    {
+        /* ONE ERASE AT A TIME: the end of the one that is out is awaited by
+         * the names kept for it (a card left with home does not end it), and
+         * AO_AppMgr would refuse a second while it works. */
+        KLOG_N(TAG, "remove: the erase of %s is still out; this one is refused", me->rm_name);
+        kgui_hint(kgui_dtext_remove_end((uint8_t)KODE_DENIED));
+    }
     else if ( GUI_SHEET_DETAILS == me->sheet )
     {
         GuiRow target = { GUI_ROW_INSTALLED, 0U, 0U };
         int8_t row    = -1;
 
-        if ( gui_details_target(me, &target, &row) && (GUI_ROW_INSTALLED == target.kind)
-            && gui_installed_has(me, me->installed[target.idx].name) )
+        if ( gui_details_target(me, &target, &row) && gui_remove_name(me, &target) )
         {
-            (void)snprintf(me->rm_name, sizeof(me->rm_name), "%s", me->installed[target.idx].name);
-            (void)snprintf(me->rm_label, sizeof(me->rm_label), "%s",
-                           me->installed[target.idx].face.name);
             (void)kgui_haptic_play(KGUI_HAPTIC_CLICK);
             me->rm_busy = true;
             gui_sheet_open_kind(me, GUI_SHEET_REMOVE);
@@ -12941,7 +13061,7 @@ static void gui_details_act(Gui * const me)
         {
             KLOG_D(TAG, "remove: the question takes no answer yet");
         }
-        else if ( !gui_installed_has(me, me->rm_name) )
+        else if ( me->rm_installed && !gui_installed_has(me, me->rm_name) )
         {
             /* The app left while the question stood (the console, another
              * write): there is nothing to erase, and the question goes as
@@ -12949,7 +13069,7 @@ static void gui_details_act(Gui * const me)
             KLOG_N(TAG, "remove: %s had already left the list; nothing is asked",
                    me->rm_name);
             me->rm_since_ms = khal_time_ms();
-            gui_remove_done(me, true);
+            gui_remove_done(me, (uint8_t)KODE_OK);
         }
         else
         {
@@ -12965,12 +13085,12 @@ static void gui_details_act(Gui * const me)
 }
 
 /**
- * @brief The question is answered yes: AO_AppMgr is asked to erase the app,
- *        the apps are asked about again, and the card turns into the wait.
+ * @brief The question is answered yes: AO_AppMgr is asked to take everything
+ *        of the app off the board, and the card turns into the wait.
  *
- * AO_AppMgr does not answer an erase, so the list is what says it happened:
- * gui_remove_tick() watches it. The erase is posted before the question about
- * the apps, to the same queue, so the answer follows it.
+ * AO_AppMgr publishes the end of every erase (APP_ERASE_DONE_SIG), a refusal
+ * included: gui_remove_ended() takes the one that names this app, and
+ * gui_remove_tick() bounds the wait for it.
  *
  * @param me The AO.
  */
@@ -12979,75 +13099,156 @@ static void gui_remove_go(Gui * const me)
     KLOG_N(TAG, "remove: %s asked of AO_AppMgr", me->rm_name);
     appmgr_erase_request(me->rm_name);
     me->rm_since_ms = khal_time_ms();
-    me->rm_poll_ms  = me->rm_since_ms;
-    gui_request_installed(me);
+    me->rm_out      = true;
     gui_sheet_open_kind(me, GUI_SHEET_REMOVING);
 }
 
 /**
- * @brief The wait is over: the card goes, and the launcher says what happened.
+ * @brief Whether kgui/last names an app: its project, or a file of it the
+ *        list shows.
  *
- * @param me   The AO.
- * @param gone true when the app has left the list.
+ * @param me      The AO.
+ * @param last    What kgui/last holds.
+ * @param project The app's project name.
+ * @return true when the row launched last is that app's.
  */
-static void gui_remove_done(Gui * const me, bool gone)
+static bool gui_last_is_of(Gui const * const me, const char *last, const char *project)
 {
+    bool is_of = (strcmp(last, project) == 0);
+
+    for ( uint8_t i = 0U; (i < me->entry_count) && !is_of; ++i )
+    {
+        is_of = (strcmp(me->entries[i].name, last) == 0)
+                && (strcmp(me->entries[i].project, project) == 0);
+    }
+    return is_of;
+}
+
+/**
+ * @brief Forget an app that has left the board: kgui/last when it names it,
+ *        and its place in the recents.
+ *
+ * A store that refuses leaves a name no row answers to, which the next boot
+ * reads as no row at all.
+ *
+ * @param me      The AO.
+ * @param project The project name of the app that left.
+ */
+static void gui_forget_app(Gui * const me, const char *project)
+{
+    char last[KODE_APP_FILE_MAX];
+
+    if ( (khal_nvs_get_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_LAST, last, sizeof(last)) == KODE_OK)
+        && gui_last_is_of(me, last, project) )
+    {
+        if ( khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_LAST) != KODE_OK )
+        {
+            KLOG_W(TAG, "the store refused to forget kgui/%s", GUI_NVS_KEY_LAST);
+        }
+    }
+    if ( kgui_recents_drop(me->recents, project) )
+    {
+        if ( khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_RECENTS, me->recents) != KODE_OK )
+        {
+            KLOG_W(TAG, "the store refused kgui/%s", GUI_NVS_KEY_RECENTS);
+        }
+    }
+}
+
+/**
+ * @brief The wait is over: the card goes, the launcher says how the erase
+ *        ended, and the lists are asked again.
+ *
+ * An erase that left nothing is said by the notice that names the app; any
+ * other end by a hint (kgui_dtext_remove_end()). The files and the apps are
+ * asked about again either way, so the rows are what the media hold now.
+ *
+ * @param me     The AO.
+ * @param status How the erase ended: AppEraseDoneEvt.status, or KODE_TIMEOUT
+ *               when no end came.
+ */
+static void gui_remove_done(Gui * const me, uint8_t status)
+{
+    const char * const words = kgui_dtext_remove_end(status);
+
     me->sheet_locked = false;
     me->rm_busy      = false;
-    if ( gone )
+    me->rm_out       = false;
+    if ( NULL == words )
     {
         char t[48];
 
-        KLOG_N(TAG, "remove: %s left the list after %u ms", me->rm_name,
+        KLOG_N(TAG, "remove: %s left the board after %u ms", me->rm_name,
                (unsigned)(khal_time_ms() - me->rm_since_ms));
         (void)snprintf(t, sizeof(t), "%.32s was removed", me->rm_label);
         gui_visit(me, GUI_VISIT_NOTICE, t);
     }
     else
     {
-        KLOG_W(TAG, "remove: %s is still listed after %u ms; nothing else was erased",
-               me->rm_name, (unsigned)GUI_REMOVE_WAIT_MS);
-        kgui_hint(GUI_HINT_REMOVE_FAILED);
+        KLOG_W(TAG, "remove: the erase of %s ended with code %u after %u ms: %s",
+               me->rm_name, (unsigned)status,
+               (unsigned)(khal_time_ms() - me->rm_since_ms), words);
+        kgui_hint(words);
     }
-    gui_sheet_close(me);
+    gui_request_list(me);
+    gui_request_installed(me);
+    if ( (GUI_SHEET_REMOVING == me->sheet) || (GUI_SHEET_REMOVE == me->sheet) )
+    {
+        gui_sheet_close(me);
+    }
 }
 
 /**
- * @brief The Removing card's share of the tick.
+ * @brief AO_AppMgr says an erase ended: this launcher's, or somebody else's.
  *
- * Done when a finished round of the apps no longer lists the app, or when
- * GUI_REMOVE_WAIT_MS has passed. While it is still listed, the apps are asked
- * again every GUI_REMOVE_POLL_MS - when no round is out, or when the one that
- * is out has had no answer for that long: AO_AppMgr ignores a list request
- * while it writes, and a round that never came must not leave the card
- * waiting for it.
+ * Whoever asked, an app that left the board is forgotten here too
+ * (gui_forget_app()). The cards and the rescan are only for the erase this
+ * launcher asked for, by the name it gave.
+ *
+ * @param me The AO.
+ * @param d  The end of the erase.
+ */
+static void gui_remove_ended(Gui * const me, AppEraseDoneEvt const * const d)
+{
+    bool const mine = me->rm_out && (strcmp(d->name, me->rm_name) == 0);
+
+    if ( ((uint8_t)KODE_OK == d->status) || ((uint8_t)KODE_IO_ERROR == d->status) )
+    {
+        gui_forget_app(me, d->name);
+    }
+    if ( mine )
+    {
+        const char *image = "none";
+        const char *card  = "absent";
+
+        if ( d->image )
+        {
+            image = "removed";
+        }
+        if ( d->sd.present )
+        {
+            card = "there";
+        }
+        KLOG_N(TAG, "remove: %s: image %s; partition %u gone, %u left; card %s, %u gone, %u left",
+               d->name, image, (unsigned)d->fs.files, (unsigned)d->fs.left,
+               card, (unsigned)d->sd.files, (unsigned)d->sd.left);
+        gui_remove_done(me, d->status);
+    }
+}
+
+/**
+ * @brief The Remove's share of the tick: the bound on the wait for its end.
+ *
+ * AO_AppMgr answers every erase; GUI_REMOVE_WAIT_MS is past the longest it
+ * waits for AO_Storage, so reaching it means the end was lost.
  *
  * @param me The AO.
  */
 static void gui_remove_tick(Gui * const me)
 {
-    if ( GUI_SHEET_REMOVING == me->sheet )
+    if ( me->rm_out && ((khal_time_ms() - me->rm_since_ms) >= GUI_REMOVE_WAIT_MS) )
     {
-        uint32_t const now = khal_time_ms();
-
-        if ( !me->apps_out && !gui_installed_has(me, me->rm_name) )
-        {
-            gui_remove_done(me, true);
-        }
-        else if ( (now - me->rm_since_ms) >= GUI_REMOVE_WAIT_MS )
-        {
-            gui_remove_done(me, false);
-        }
-        else if ( ((now - me->rm_poll_ms) >= GUI_REMOVE_POLL_MS)
-                 && (!me->apps_out || ((now - me->list_out_ms) >= GUI_REMOVE_POLL_MS)) )
-        {
-            me->rm_poll_ms = now;
-            gui_request_installed(me);
-        }
-        else
-        {
-            /* Waiting for the round that is out. */
-        }
+        gui_remove_done(me, (uint8_t)KODE_TIMEOUT);
     }
 }
 
@@ -14522,9 +14723,9 @@ static void gui_return_check(Gui * const me)
 /**
  * @brief Put the list where the app left it: its group, and the rows.
  *
- * The launcher opens the group the app is filed under (kgui_group_of()), or
- * stays at the root for an app that is in none; the selection lands on the app
- * by its name: the one that ran (gui_last_follow_offset()), or kgui/last when
+ * The launcher opens the group the app is filed under (kgui_group_of()):
+ * its first category's, or All for an app with none; the selection lands on
+ * the app by its name: the one that ran (gui_last_follow_offset()), or kgui/last when
  * no installed app sits at the offset (gui_last_load()). The root keeps the
  * group's row as its selection, so going back lands on it.
  *
@@ -15029,6 +15230,16 @@ static void gui_write_send(Gui * const me)
         case GUI_ASK_OS: {
             appmgr_image_request((uint8_t)KFW_SRC_SD, GUI_OS_IMAGE,
                                  (uint8_t)KFW_TARGET_OS, false);
+            break;
+        }
+        case GUI_ASK_OS_NET: {
+            /* The link the service named: AO_AppMgr streams it into the
+             * inactive slot as `install src="https://..." dst=os` does. */
+            if ( NULL != me->os )
+            {
+                appmgr_image_request((uint8_t)KFW_SRC_HTTP, me->os->rel.url,
+                                     (uint8_t)KFW_TARGET_OS, false);
+            }
             break;
         }
         default: {
@@ -21639,8 +21850,8 @@ static void gui_sheet_fill(Gui * const me)
         case GUI_SHEET_DETAILS: {
             /* THE ROW, READ OUT: the face it wears, what it calls itself and
              * the line it declared. Its one answer is Remove, the pad's top
-             * button and a tap on the glass alike, for an installed app
-             * only; it stands on the card as the module's own pill, not as
+             * button and a tap on the glass alike, for an installed app and
+             * for a file that names its project; it stands on the card as the module's own pill, not as
              * the kit's button (gui_details_fill()). */
             gui_details_fill(me);
             break;
@@ -21651,7 +21862,7 @@ static void gui_sheet_fill(Gui * const me)
             break;
         }
         case GUI_SHEET_REMOVING: {
-            /* THE WAIT while the app leaves the list (gui_removing_fill()). */
+            /* THE WAIT while the app leaves the board (gui_removing_fill()). */
             gui_removing_fill(me);
             break;
         }
@@ -24113,6 +24324,182 @@ static bool gui_os_image_on_card(Gui const * const me)
 }
 
 /**
+ * @brief Whether this build has an update service to ask.
+ * @return true unless CONFIG_KGUI_OS_UPDATE_URL is empty.
+ */
+static bool gui_os_service(void)
+{
+    return (sizeof(GUI_OS_SERVICE) > GUI_OS_SERVICE_NONE);
+}
+
+/**
+ * @brief Whether a release's link may be a plain one.
+ * @return true only when the service itself is asked with no TLS, on a bench.
+ */
+static bool gui_os_plain(void)
+{
+    return (strncmp(GUI_OS_SERVICE, GUI_OS_SERVICE_PLAIN,
+                    sizeof(GUI_OS_SERVICE_PLAIN) - 1U) == 0);
+}
+
+/**
+ * @brief The newer version the service named.
+ * @param me The AO.
+ * @return Its version; "" while nothing was ever kept.
+ */
+static const char *gui_os_version(Gui const * const me)
+{
+    const char *version = "";
+
+    if ( NULL != me->os )
+    {
+        version = me->os->rel.version;
+    }
+    return version;
+}
+
+/**
+ * @brief A check ended with nothing to show.
+ *
+ * @param me  The AO.
+ * @param why What went wrong, for the log.
+ */
+static void gui_os_failed(Gui * const me, const char *why)
+{
+    me->os_check = (uint8_t)KGUI_OSREL_FAILED;
+    KLOG_I(TAG, "update: not checked (%s)", why);
+}
+
+/**
+ * @brief Ask the update service which kodeOS is the latest.
+ *
+ * Asked when About opens, when Wi-Fi gets its address under that page, and
+ * on the top button on its row: never by itself, since About is the only
+ * place that shows the answer. Nothing is asked with no service, with no
+ * address, or while a question is out. The answer comes back as
+ * NET_HTTP_RSP_SIG (gui_os_answer()), into a block of PSRAM taken at the
+ * first question and lent to AO_Net until then.
+ *
+ * @param me  The AO.
+ * @param why What asked, for the log.
+ */
+static void gui_os_ask(Gui * const me, const char *why)
+{
+    /* cppcheck-suppress knownConditionTrueFalse ; the service is the build's choice: an empty CONFIG_KGUI_OS_UPDATE_URL asks nobody */
+    if ( (!gui_os_service()) || (!me->wifi_linked)
+        || ((uint8_t)KGUI_OSREL_ASKING == me->os_check) )
+    {
+        return;     /* nobody to ask, no way to ask, or asked already */
+    }
+    if ( NULL == me->os )
+    {
+        /* cppcheck-suppress misra-c2012-11.5 ; khal_alloc_psram() answers void *: PSRAM is taken by name (rule 8) */
+        me->os = (GuiOsUpdate *)khal_alloc_psram(GUI_OS_ALIGN, sizeof(GuiOsUpdate));
+        if ( NULL != me->os )
+        {
+            (void)memset(me->os, 0, sizeof(*me->os));
+        }
+    }
+    if ( NULL == me->os )
+    {
+        gui_os_failed(me, "no memory for the answer");
+        return;
+    }
+    if ( net_http_ask(&me->super, false, GUI_OS_SERVICE, NULL, 0U, NULL,
+                      me->os->answer, KGUI_OSREL_ANSWER_MAX) == KODE_OK )
+    {
+        me->os_check = (uint8_t)KGUI_OSREL_ASKING;
+        KLOG_I(TAG, "update: asking the service (%s)", why);
+    }
+    else
+    {
+        gui_os_failed(me, "AO_Net did not take the question");
+    }
+}
+
+/**
+ * @brief The update service answered, or the question failed.
+ *
+ * A release newer than the running image is kept and offered; an equal or
+ * older one, and a service with no release at all, leave the board up to
+ * date. About's row follows when that page is up.
+ *
+ * @param me The AO.
+ * @param r  AO_Net's answer; the body is in the block the question lent.
+ */
+static void gui_os_answer(Gui * const me, NetHttpRspEvt const * const r)
+{
+    bool const reached = ((uint8_t)KODE_OK == r->rc);
+
+    if ( (NULL == me->os) || ((uint8_t)KGUI_OSREL_ASKING != me->os_check) )
+    {
+        return;     /* not the answer to a question of this file's */
+    }
+    if ( reached && ((uint16_t)GUI_HTTP_OK == r->result.status)
+        && (!r->result.truncated) && (KGUI_OSREL_ANSWER_MAX >= r->result.kept) )
+    {
+        kgui_osrel_t     rel;
+        kdrv_slot_desc_t self;
+        const char      *running = "";
+
+        me->os->answer[r->result.kept] = '\0';
+        if ( kdrv_running_desc(&self) == KODE_OK )
+        {
+            running = self.version;
+        }
+        if ( !kgui_osrel_parse(me->os->answer, r->result.kept, gui_os_plain(), &rel) )
+        {
+            gui_os_failed(me, "the service's answer did not read");
+        }
+        else if ( kgui_osrel_newer(rel.version, running) )
+        {
+            me->os->rel  = rel;
+            me->os_check = (uint8_t)KGUI_OSREL_AVAILABLE;
+            KLOG_N(TAG, "update: kodeOS %s is available; this is %s",
+                   rel.version, running);
+        }
+        else
+        {
+            me->os_check = (uint8_t)KGUI_OSREL_CURRENT;
+            KLOG_I(TAG, "update: the service names kodeOS %s; this is %s, up to date",
+                   rel.version, running);
+        }
+    }
+    else if ( reached && ((uint16_t)GUI_HTTP_NOT_FOUND == r->result.status) )
+    {
+        me->os_check = (uint8_t)KGUI_OSREL_CURRENT;
+        KLOG_I(TAG, "update: the service names no release");
+    }
+    else
+    {
+        KLOG_I(TAG, "update: the service gave status %u, HTTP %u",
+               (unsigned)r->rc, (unsigned)r->result.status);
+        gui_os_failed(me, "no answer from the service");
+    }
+    if ( GUI_SHEET_ABOUT == me->sheet )
+    {
+        gui_sheet_refill(me);
+    }
+}
+
+/**
+ * @brief What About's "Software update" row says now.
+ * @param me The AO.
+ * @return The row's state, from the card, the network, the battery and the check.
+ */
+static kgui_osrel_row_t gui_os_row(Gui const * const me)
+{
+    kgui_osrel_view_t view;
+
+    view.service = gui_os_service();
+    view.card    = gui_os_image_on_card(me);
+    view.linked  = me->wifi_linked;
+    view.power   = kgui_osrel_power_ok(me->soc, me->vbus);
+    view.check   = (kgui_osrel_check_t)me->os_check;
+    return kgui_osrel_row(&view);
+}
+
+/**
  * @brief What a row of More says under its name: the page's reading, in a
  *        few words.
  *
@@ -24570,16 +24957,19 @@ static void gui_about_fill(Gui * const me)
      * rather than greying itself out: a row that can explain its own refusal
      * is worth more than a row that only refuses (rule 6). */
     {
-        const char *image = "No image on the card";
-        GuiActRole  role  = GUI_ACT_SECONDARY;
+        char                   words[KGUI_OSREL_TEXT_MAX];
+        kgui_osrel_row_t const row  = gui_os_row(me);
+        GuiActRole             role = GUI_ACT_SECONDARY;
 
-        if ( gui_os_image_on_card(me) )
+        /* The card's image, or the release the update service named, or why
+         * there is neither (kgui_osrel_row()). */
+        kgui_osrel_row_text(row, gui_os_version(me), words, sizeof(words));
+        if ( kgui_osrel_row_installs(row) )
         {
-            image = "kodeos.bin on the card";
             /* The card's one yellow pill, and only while it can act. */
-            role  = GUI_ACT_PRIMARY;
+            role = GUI_ACT_PRIMARY;
         }
-        if ( gui_sheet_row_plain(me, "Software update", image,
+        if ( gui_sheet_row_plain(me, "Software update", words,
                                 gui_action_ground(role)) != NULL )
         {
             me->sheet_tag[me->sheet_n - 1U] = (uint16_t)GUI_TAG_ABOUT_UPDATE;
@@ -24599,7 +24989,9 @@ static void gui_about_fill(Gui * const me)
 /**
  * @brief The top button on one About row.
  *
- * Two rows answer it: Update writes kodeos.bin from the card, and Factory
+ * Three rows answer it: Technical shows or hides its rows, Software update
+ * installs the card's kodeos.bin or the release the update service named
+ * (or asks that service again when there is nothing to install), and Factory
  * reset raises its question.
  *
  * @param me  The AO.
@@ -24623,11 +25015,31 @@ static void gui_about_act(Gui * const me, uint16_t tag)
     {
         return;     /* every other row on this page is a reading */
     }
-    if ( !gui_os_image_on_card(me) )
+    kgui_osrel_row_t const row = gui_os_row(me);
+
+    if ( kgui_osrel_row_asks(row) )
     {
-        return;     /* the row already says there is no file */
+        /* Nothing to install: the press asks the service again. */
+        gui_os_ask(me, "the row");
+        gui_sheet_refill(me);
+        return;
     }
-    KLOG_I(TAG, "updating kodeOS from the card");
+    if ( !kgui_osrel_row_installs(row) )
+    {
+        return;     /* the row already says why there is nothing to do */
+    }
+    GuiAsk from = GUI_ASK_OS_NET;
+
+    if ( KGUI_OSREL_ROW_CARD == row )
+    {
+        from = GUI_ASK_OS;
+        KLOG_I(TAG, "updating kodeOS from the card");
+    }
+    else
+    {
+        KLOG_N(TAG, "updating kodeOS to %s from the update service",
+               gui_os_version(me));
+    }
     /* The image goes into the inactive kodeOS slot, and AO_AppMgr ends
      * every write there with AO_Boot's switch and a restart into it, which
      * is what the Opening card says. The card rises first, at 0 %, about no
@@ -24639,7 +25051,7 @@ static void gui_about_act(Gui * const me, uint16_t tag)
     me->open_hold  = false;
     me->sheet_row  = -1;
     (void)snprintf(me->write_name, sizeof(me->write_name), "kodeOS");
-    gui_write_ask(me, GUI_ASK_OS, "");
+    gui_write_ask(me, from, "");
     gui_sheet_open_kind(me, GUI_SHEET_OPENING);
 }
 
@@ -32589,6 +33001,7 @@ static QState Gui_initial(Gui * const me, void const * const par)
     QActive_subscribe(&me->super, APP_FLASH_PROGRESS_SIG);
     QActive_subscribe(&me->super, APP_FLASH_DONE_SIG);
     QActive_subscribe(&me->super, APP_FLASH_FAIL_SIG);
+    QActive_subscribe(&me->super, APP_ERASE_DONE_SIG);
 #if CONFIG_KODE_TEST_DOT
     /* AO_TestDot's screens and patterns: the E5 test takes the glass. */
     QActive_subscribe(&me->super, TEST_DOT_SCREEN_REQ_SIG);
@@ -33460,6 +33873,13 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             status = Q_HANDLED();
             break;
         }
+        case APP_ERASE_DONE_SIG: {
+            /* The end of an erase, whoever asked for it: the Removing card's
+             * answer, and the moment an app that left is forgotten. */
+            gui_remove_ended(me, Q_EVT_CAST(AppEraseDoneEvt));
+            status = Q_HANDLED();
+            break;
+        }
         case APP_FLASH_DONE_SIG: {
             AppFlashDoneEvt const * const d = Q_EVT_CAST(AppFlashDoneEvt);
 
@@ -34045,6 +34465,12 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
 #endif
+        case NET_HTTP_RSP_SIG: {
+            /* The one HTTP question this AO asks: the update service's. */
+            gui_os_answer(me, Q_EVT_CAST(NetHttpRspEvt));
+            status = Q_HANDLED();
+            break;
+        }
 #if CONFIG_KODEOS_WIFI
         case WIFI_STATE_SIG: {
             WifiStateEvt const * const w = Q_EVT_CAST(WifiStateEvt);
@@ -34088,6 +34514,8 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                 me->scan_out      = false;
                 me->scan_answered = false;
             }
+            bool const joined = got_ip && (!me->wifi_linked);
+
             me->wifi_linked = ((uint8_t)KDRV_WIFI_GOT_IP == w->state);
             me->wifi_rssi   = w->rssi;
             (void)snprintf(me->wifi_ssid, sizeof(me->wifi_ssid), "%s", w->ssid);
@@ -34117,6 +34545,16 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             }
             /* And the keypad, whose join this may be the answer to. */
             gui_kbd_wifi_state(me, w);
+            /* About's update row reads the link, and an address that
+             * arrives under that page is the one its question waited for. */
+            if ( (GUI_SHEET_ABOUT == me->sheet) && (!same) )
+            {
+                if ( joined )
+                {
+                    gui_os_ask(me, "Wi-Fi");
+                }
+                gui_sheet_refill(me);
+            }
             status = Q_HANDLED();
             break;
         }
@@ -36575,6 +37013,8 @@ static void gui_sheet_ask_first(Gui * const me)
     me->sheet_ask = true;
     if ( GUI_SHEET_ABOUT == me->sheet )
     {
+        /* The update service: this page is where its answer shows. */
+        gui_os_ask(me, "About");
         storage_request(KDRV_MEDIUM_SD, STORAGE_OP_INFO);
 #if CONFIG_KODEOS_RADIO
         radio_state_request();
@@ -36823,7 +37263,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 /* The pad is refused here for the reason gui_sheet_navigate()
                  * gives, and a held bottom button is the pad. The Removing
                  * card is the one locked card home may leave: the erase is
-                 * AO_AppMgr's by then, and the list says the rest. */
+                 * AO_AppMgr's by then, and its end is taken with no card up. */
                 (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
                 status = Q_HANDLED();
             }
@@ -36859,7 +37299,7 @@ static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                 if ( GUI_SHEET_REMOVING == me->sheet )
                 {
                     KLOG_N(TAG, "remove: home leaves the wait for %s; the erase "
-                                "is AO_AppMgr's and the list says the rest",
+                                "is AO_AppMgr's and its end is still taken",
                            me->rm_name);
                 }
                 if ( home == Q_STATE_CAST(&Gui_browsing) )

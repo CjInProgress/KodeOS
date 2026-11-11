@@ -1,0 +1,323 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/**
+ * @file test_kgui_osrel.c
+ * @brief Host tests of the update service's answer and About's row
+ *        (kgui_osrel.h).
+ */
+#include <stdio.h>
+#include <string.h>
+
+#include "unity.h"
+
+#include "kgui_osrel.h"
+
+/** The service's answer as it stood on 2026-11-10. */
+#define ANSWER_LIVE \
+    "{\"version\":\"00.00.24\"," \
+    "\"url\":\"https://cdn.kode.diy/kodeos/00.00.24-03a0331d.kfw\"," \
+    "\"size\":1675238," \
+    "\"sha256\":\"03a0331d32b75b1d6d76d9beda89a3003e5433f113380f9e499f52e9a289e0a9\"," \
+    "\"publishedAt\":\"2026-11-04T11:58:25.326Z\"}"
+
+void setUp(void)
+{
+}
+
+void tearDown(void)
+{
+}
+
+/** @brief Parse a literal, terminator left out. */
+static bool parse(const char *json, bool plain_ok, kgui_osrel_t *out)
+{
+    return kgui_osrel_parse(json, strlen(json), plain_ok, out);
+}
+
+void test_parse_the_live_answer(void)
+{
+    kgui_osrel_t rel;
+
+    (void)memset(&rel, 0, sizeof(rel));
+    TEST_ASSERT_TRUE(parse(ANSWER_LIVE, false, &rel));
+    TEST_ASSERT_EQUAL_STRING("00.00.24", rel.version);
+    TEST_ASSERT_EQUAL_STRING("https://cdn.kode.diy/kodeos/00.00.24-03a0331d.kfw", rel.url);
+}
+
+void test_parse_any_order_spaces_and_new_fields(void)
+{
+    kgui_osrel_t rel;
+
+    (void)memset(&rel, 0, sizeof(rel));
+    TEST_ASSERT_TRUE(parse("{ \"notes\" : [\"a\", {\"b\": 1}],\n"
+                           "  \"url\" : \"https://cdn.kode.diy/kodeos/0.1.2-a1b2c3d4.kfw\" ,\n"
+                           "  \"min\" : {\"version\": \"9.9.9\"},\n"
+                           "  \"version\" : \"0.1.2\" }",
+                           false, &rel));
+    TEST_ASSERT_EQUAL_STRING("0.1.2", rel.version);
+    TEST_ASSERT_EQUAL_STRING("https://cdn.kode.diy/kodeos/0.1.2-a1b2c3d4.kfw", rel.url);
+}
+
+void test_parse_takes_the_top_level_alone(void)
+{
+    kgui_osrel_t rel;
+
+    /* Both fields exist, one level down: that is not this answer. */
+    TEST_ASSERT_FALSE(parse("{\"latest\":{\"version\":\"0.1.2\","
+                            "\"url\":\"https://cdn.kode.diy/kodeos/x.kfw\"}}",
+                            false, &rel));
+    /* A value that reads like a key is a value. */
+    TEST_ASSERT_TRUE(parse("{\"note\":\"version\",\"version\":\"1.2.3\","
+                           "\"url\":\"https://cdn.kode.diy/kodeos/x.kfw\"}",
+                           false, &rel));
+    TEST_ASSERT_EQUAL_STRING("1.2.3", rel.version);
+}
+
+void test_parse_refuses_a_missing_field(void)
+{
+    kgui_osrel_t rel;
+
+    TEST_ASSERT_FALSE(parse("{\"version\":\"0.1.2\"}", false, &rel));
+    TEST_ASSERT_FALSE(parse("{\"url\":\"https://cdn.kode.diy/kodeos/x.kfw\"}", false, &rel));
+    TEST_ASSERT_FALSE(parse("{\"error\":\"no_release\"}", false, &rel));
+    TEST_ASSERT_FALSE(parse("{}", false, &rel));
+    TEST_ASSERT_FALSE(parse("", false, &rel));
+    TEST_ASSERT_FALSE(parse("404 Not Found", false, &rel));
+    TEST_ASSERT_FALSE(kgui_osrel_parse(NULL, 4U, false, &rel));
+    TEST_ASSERT_FALSE(kgui_osrel_parse(ANSWER_LIVE, strlen(ANSWER_LIVE), false, NULL));
+    /* A number is not a version, and a version is a string. */
+    TEST_ASSERT_FALSE(parse("{\"version\":24,\"url\":\"https://cdn.kode.diy/x.kfw\"}",
+                            false, &rel));
+}
+
+void test_parse_refuses_a_version_that_is_not_three_groups(void)
+{
+    static const char *const BAD[] = {
+        "0.1", "0.1.2.3", "v0.1.2", "0.1.2-rc1", "0..2", ".1.2", "0.1.", "0.1.a",
+        "00000.1.2", "", " 0.1.2", "0.1.2 ",
+    };
+    kgui_osrel_t rel;
+    char         json[160];
+
+    for ( size_t i = 0U; (sizeof(BAD) / sizeof(BAD[0])) > i; ++i )
+    {
+        (void)snprintf(json, sizeof(json),
+                       "{\"version\":\"%s\",\"url\":\"https://cdn.kode.diy/kodeos/x.kfw\"}",
+                       BAD[i]);
+        TEST_ASSERT_FALSE_MESSAGE(parse(json, false, &rel), BAD[i]);
+    }
+}
+
+void test_parse_refuses_a_link_it_would_not_follow(void)
+{
+    static const char *const BAD[] = {
+        "http://cdn.kode.diy/kodeos/x.kfw",     /* plain, and not a bench build */
+        "ftp://cdn.kode.diy/kodeos/x.kfw",
+        "cdn.kode.diy/kodeos/x.kfw",
+        "https://",
+        "https://cdn.kode.diy/kodeos/x y.kfw",
+        "https://cdn.kode.diy/kodeos/x\\/y.kfw",
+        "",
+    };
+    kgui_osrel_t rel;
+    char         json[400];
+    char         longest[KGUI_OSREL_URL_MAX + 16U];
+
+    for ( size_t i = 0U; (sizeof(BAD) / sizeof(BAD[0])) > i; ++i )
+    {
+        (void)snprintf(json, sizeof(json), "{\"version\":\"0.1.2\",\"url\":\"%s\"}", BAD[i]);
+        TEST_ASSERT_FALSE_MESSAGE(parse(json, false, &rel), BAD[i]);
+    }
+
+    /* One character more than fits is refused, never cut. */
+    (void)memset(longest, 'a', sizeof(longest));
+    (void)memcpy(longest, "https://", 8U);
+    longest[KGUI_OSREL_URL_MAX] = '\0';
+    (void)snprintf(json, sizeof(json), "{\"version\":\"0.1.2\",\"url\":\"%s\"}", longest);
+    TEST_ASSERT_FALSE(parse(json, false, &rel));
+    longest[KGUI_OSREL_URL_MAX - 1U] = '\0';
+    (void)snprintf(json, sizeof(json), "{\"version\":\"0.1.2\",\"url\":\"%s\"}", longest);
+    TEST_ASSERT_TRUE(parse(json, false, &rel));
+    TEST_ASSERT_EQUAL_UINT(KGUI_OSREL_URL_MAX - 1U, strlen(rel.url));
+}
+
+void test_parse_takes_a_plain_link_on_a_bench_alone(void)
+{
+    static const char JSON[] =
+        "{\"version\":\"0.1.2\",\"url\":\"http://192.168.1.20:8000/kodeos.kfw\"}";
+    kgui_osrel_t rel;
+
+    TEST_ASSERT_FALSE(parse(JSON, false, &rel));
+    TEST_ASSERT_TRUE(parse(JSON, true, &rel));
+    TEST_ASSERT_EQUAL_STRING("http://192.168.1.20:8000/kodeos.kfw", rel.url);
+}
+
+void test_parse_refuses_a_cut_answer_and_keeps_out(void)
+{
+    kgui_osrel_t rel;
+
+    (void)snprintf(rel.version, sizeof(rel.version), "1.1.1");
+    (void)snprintf(rel.url, sizeof(rel.url), "kept");
+    /* Cut inside the link: the closing quote never comes. */
+    TEST_ASSERT_FALSE(kgui_osrel_parse(ANSWER_LIVE, 60U, false, &rel));
+    TEST_ASSERT_EQUAL_STRING("1.1.1", rel.version);
+    TEST_ASSERT_EQUAL_STRING("kept", rel.url);
+    /* A terminator inside the bytes ends the answer there. */
+    TEST_ASSERT_FALSE(kgui_osrel_parse("{\"version\":\"0.1.2\"\0,\"url\":\"https://a/b\"}",
+                                       41U, false, &rel));
+}
+
+void test_newer_compares_groups_as_numbers(void)
+{
+    TEST_ASSERT_TRUE(kgui_osrel_newer("0.1.0", "00.00.24"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("00.00.24", "0.1.0"));
+    TEST_ASSERT_TRUE(kgui_osrel_newer("0.1.10", "0.1.9"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("0.1.9", "0.1.10"));
+    TEST_ASSERT_TRUE(kgui_osrel_newer("1.0.0", "0.99.99"));
+    TEST_ASSERT_TRUE(kgui_osrel_newer("0.2.0", "0.1.9999"));
+    TEST_ASSERT_TRUE(kgui_osrel_newer("0.1.2", "0.1.1"));
+}
+
+void test_newer_never_offers_the_same_version(void)
+{
+    TEST_ASSERT_FALSE(kgui_osrel_newer("0.1.1", "0.1.1"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("00.01.00", "0.1.0"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("0.1.0", "00.01.00"));
+}
+
+void test_newer_is_false_for_what_it_cannot_read(void)
+{
+    TEST_ASSERT_FALSE(kgui_osrel_newer("9.9.9", "dev"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("9.9.9", "0.1.1-dirty"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("latest", "0.1.1"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("9.9", "0.1.1"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer(NULL, "0.1.1"));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("9.9.9", NULL));
+    TEST_ASSERT_FALSE(kgui_osrel_newer("", ""));
+}
+
+void test_power_needs_a_cable_or_a_fifth_of_the_battery(void)
+{
+    TEST_ASSERT_TRUE(kgui_osrel_power_ok(100U, false));
+    TEST_ASSERT_TRUE(kgui_osrel_power_ok((uint8_t)KGUI_OSREL_MIN_PCT, false));
+    TEST_ASSERT_FALSE(kgui_osrel_power_ok((uint8_t)(KGUI_OSREL_MIN_PCT - 1U), false));
+    TEST_ASSERT_FALSE(kgui_osrel_power_ok(0U, false));
+    TEST_ASSERT_TRUE(kgui_osrel_power_ok(0U, true));
+}
+
+/** @brief The row for one set of facts. */
+static kgui_osrel_row_t row(bool service, bool card, bool linked, bool power,
+                            kgui_osrel_check_t check)
+{
+    kgui_osrel_view_t const view = { service, card, linked, power, check };
+
+    return kgui_osrel_row(&view);
+}
+
+void test_row_the_card_wins_and_a_build_with_no_service_says_as_before(void)
+{
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CARD, row(true, true, true, true, KGUI_OSREL_AVAILABLE));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CARD, row(false, true, false, false, KGUI_OSREL_NEVER));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_NONE, row(false, false, true, true, KGUI_OSREL_AVAILABLE));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_NONE, kgui_osrel_row(NULL));
+}
+
+void test_row_with_no_network_says_so_whatever_was_known(void)
+{
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_OFFLINE, row(true, false, false, true, KGUI_OSREL_NEVER));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_OFFLINE, row(true, false, false, true, KGUI_OSREL_AVAILABLE));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_OFFLINE, row(true, false, false, true, KGUI_OSREL_FAILED));
+}
+
+void test_row_follows_the_check(void)
+{
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CHECKING, row(true, false, true, true, KGUI_OSREL_NEVER));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CHECKING, row(true, false, true, true, KGUI_OSREL_ASKING));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CURRENT, row(true, false, true, true, KGUI_OSREL_CURRENT));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_FAILED, row(true, false, true, true, KGUI_OSREL_FAILED));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_AVAILABLE, row(true, false, true, true, KGUI_OSREL_AVAILABLE));
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CHARGE, row(true, false, true, false, KGUI_OSREL_AVAILABLE));
+    /* The battery only matters to an install. */
+    TEST_ASSERT_EQUAL(KGUI_OSREL_ROW_CURRENT, row(true, false, true, false, KGUI_OSREL_CURRENT));
+}
+
+void test_row_what_the_top_button_does(void)
+{
+    TEST_ASSERT_TRUE(kgui_osrel_row_installs(KGUI_OSREL_ROW_CARD));
+    TEST_ASSERT_TRUE(kgui_osrel_row_installs(KGUI_OSREL_ROW_AVAILABLE));
+    TEST_ASSERT_FALSE(kgui_osrel_row_installs(KGUI_OSREL_ROW_CHARGE));
+    TEST_ASSERT_FALSE(kgui_osrel_row_installs(KGUI_OSREL_ROW_CURRENT));
+    TEST_ASSERT_FALSE(kgui_osrel_row_installs(KGUI_OSREL_ROW_CHECKING));
+    TEST_ASSERT_FALSE(kgui_osrel_row_installs(KGUI_OSREL_ROW_OFFLINE));
+    TEST_ASSERT_FALSE(kgui_osrel_row_installs(KGUI_OSREL_ROW_FAILED));
+    TEST_ASSERT_FALSE(kgui_osrel_row_installs(KGUI_OSREL_ROW_NONE));
+
+    TEST_ASSERT_TRUE(kgui_osrel_row_asks(KGUI_OSREL_ROW_CURRENT));
+    TEST_ASSERT_TRUE(kgui_osrel_row_asks(KGUI_OSREL_ROW_FAILED));
+    TEST_ASSERT_FALSE(kgui_osrel_row_asks(KGUI_OSREL_ROW_CHARGE));
+    TEST_ASSERT_FALSE(kgui_osrel_row_asks(KGUI_OSREL_ROW_AVAILABLE));
+    TEST_ASSERT_FALSE(kgui_osrel_row_asks(KGUI_OSREL_ROW_CARD));
+    TEST_ASSERT_FALSE(kgui_osrel_row_asks(KGUI_OSREL_ROW_CHECKING));
+    TEST_ASSERT_FALSE(kgui_osrel_row_asks(KGUI_OSREL_ROW_OFFLINE));
+    TEST_ASSERT_FALSE(kgui_osrel_row_asks(KGUI_OSREL_ROW_NONE));
+}
+
+void test_row_words(void)
+{
+    char text[KGUI_OSREL_TEXT_MAX];
+
+    kgui_osrel_row_text(KGUI_OSREL_ROW_NONE, NULL, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("No image on the card", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_CARD, "0.1.2", text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("kodeos.bin on the card", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_AVAILABLE, "0.1.2", text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("kodeOS 0.1.2 available", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_CHARGE, "0.1.2", text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Charge to install kodeOS 0.1.2", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_CURRENT, "0.1.2", text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("kodeOS is up to date", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_CHECKING, NULL, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Checking...", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_OFFLINE, NULL, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Join Wi-Fi to check", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_FAILED, NULL, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Could not check", text);
+}
+
+void test_row_words_fit_the_longest_version_and_a_short_buffer(void)
+{
+    char text[KGUI_OSREL_TEXT_MAX];
+    char small[8];
+
+    kgui_osrel_row_text(KGUI_OSREL_ROW_CHARGE, "1234.1234.1234", text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("Charge to install kodeOS 1234.1234.1234", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_AVAILABLE, NULL, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("kodeOS  available", text);
+    kgui_osrel_row_text(KGUI_OSREL_ROW_AVAILABLE, "0.1.2", small, sizeof(small));
+    TEST_ASSERT_EQUAL_STRING("kodeOS ", small);
+    /* Nowhere to write is nothing written. */
+    kgui_osrel_row_text(KGUI_OSREL_ROW_AVAILABLE, "0.1.2", NULL, 0U);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_parse_the_live_answer);
+    RUN_TEST(test_parse_any_order_spaces_and_new_fields);
+    RUN_TEST(test_parse_takes_the_top_level_alone);
+    RUN_TEST(test_parse_refuses_a_missing_field);
+    RUN_TEST(test_parse_refuses_a_version_that_is_not_three_groups);
+    RUN_TEST(test_parse_refuses_a_link_it_would_not_follow);
+    RUN_TEST(test_parse_takes_a_plain_link_on_a_bench_alone);
+    RUN_TEST(test_parse_refuses_a_cut_answer_and_keeps_out);
+    RUN_TEST(test_newer_compares_groups_as_numbers);
+    RUN_TEST(test_newer_never_offers_the_same_version);
+    RUN_TEST(test_newer_is_false_for_what_it_cannot_read);
+    RUN_TEST(test_power_needs_a_cable_or_a_fifth_of_the_battery);
+    RUN_TEST(test_row_the_card_wins_and_a_build_with_no_service_says_as_before);
+    RUN_TEST(test_row_with_no_network_says_so_whatever_was_known);
+    RUN_TEST(test_row_follows_the_check);
+    RUN_TEST(test_row_what_the_top_button_does);
+    RUN_TEST(test_row_words);
+    RUN_TEST(test_row_words_fit_the_longest_version_and_a_short_buffer);
+    return UNITY_END();
+}

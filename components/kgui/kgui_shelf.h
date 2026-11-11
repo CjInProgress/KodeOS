@@ -93,6 +93,18 @@ uint8_t kgui_recents_split(const char *list, char (*out)[KGUI_SHELF_NAME_MAX], u
  */
 bool kgui_recents_push(char *list, const char *name);
 
+/**
+ * @brief Take a name out of the list of recents.
+ *
+ * What a removed app is owed: the others keep their order. A name that is not
+ * there, an empty one or NULL changes nothing.
+ *
+ * @param list The list, in and out: KGUI_RECENTS_LEN bytes, terminated.
+ * @param name The project name of the app that left.
+ * @return true when the list changed.
+ */
+bool kgui_recents_drop(char *list, const char *name);
+
 #ifdef __cplusplus
 }
 #endif

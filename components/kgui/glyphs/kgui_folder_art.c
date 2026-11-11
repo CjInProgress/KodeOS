@@ -30,7 +30,7 @@ extern const lv_image_dsc_t kgui_folder_time; /**< The sand still falling. */
 extern const lv_image_dsc_t kgui_folder_productivity; /**< The task, done. */
 extern const lv_image_dsc_t kgui_folder_education; /**< The ribbon that keeps your page. */
 extern const lv_image_dsc_t kgui_folder_developer; /**< A prompt, and the cursor blinking on it. */
-extern const lv_image_dsc_t kgui_folder_general; /**< Three in a row and the one that does not fit. */
+extern const lv_image_dsc_t kgui_folder_all; /**< Every app, and the one that will not sit still. */
 
 /** @brief A folder's key and its image. */
 typedef struct {
@@ -59,7 +59,7 @@ static const folder_art_t s_folders[] = {
     { "productivity", &kgui_folder_productivity },
     { "education", &kgui_folder_education },
     { "developer", &kgui_folder_developer },
-    { "general", &kgui_folder_general },
+    { "all", &kgui_folder_all },
 };
 
 const lv_image_dsc_t *kgui_folder_art(const char *key)
