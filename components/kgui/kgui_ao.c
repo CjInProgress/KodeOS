@@ -3108,6 +3108,8 @@ static QState gui_sheet_body(Gui * const me, QEvt const * const e,
 static void gui_sheet_ask_first(Gui * const me);
 static QState gui_sheet_events(Gui * const me, QEvt const * const e,
                                QStateHandler home);
+static const GuiListPage *gui_sheet_back_page(Gui const * const me,
+                                              QStateHandler home);
 static QState gui_sheet_leave(Gui * const me, QStateHandler home);
 static QState Gui_btn_test(Gui * const me, QEvt const * const e);
 static QState Gui_tp_test(Gui * const me, QEvt const * const e);
@@ -17857,7 +17859,7 @@ static QState gui_card_land(Gui * const me, QStateHandler home)
     {
         KLOG_D(TAG, "card: landed down; %s closes",
                gui_sheet_kind_name(me->sheet));
-        if ( gui_sheet_list_page(me, me->sheet) == NULL )
+        if ( gui_sheet_back_page(me, home) == NULL )
         {
             me->sheet_cut = true;
         }
@@ -36639,11 +36641,36 @@ static void gui_sheet_reopen(Gui * const me)
 }
 
 /**
+ * @brief The page a sheet's close turns the card back into.
+ *
+ * A list of choices is its page's (s_list_pages), wherever a page can stand
+ * under it. Over the face none can: the face's yellow pill opens its list
+ * from nowhere (gui_face_prompt_open()), so that list has no page to go back
+ * to and closes like any other card.
+ *
+ * @param me   The AO.
+ * @param home The screen the sheet stands on.
+ * @return The list's row of s_list_pages, or NULL for a sheet that leaves.
+ */
+static const GuiListPage *gui_sheet_back_page(Gui const * const me,
+                                              QStateHandler home)
+{
+    const GuiListPage *list = NULL;
+
+    if ( Q_STATE_CAST(&Gui_awake) != home )
+    {
+        list = gui_sheet_list_page(me, me->sheet);
+    }
+    return list;
+}
+
+/**
  * @brief Take the sheet away, as the bottom button's release does.
  *
  * A list of choices goes back to the page it opened from, and the card stays
  * up (risen again, when a finger had taken it down); every other sheet leaves
  * for its host: up to the superstate, which does not re-run the host's entry.
+ * A list with no page under it leaves too (gui_sheet_back_page()).
  * The bottom button and a drag down on a card's header close this way.
  *
  * @param me   The AO.
@@ -36652,7 +36679,7 @@ static void gui_sheet_reopen(Gui * const me)
  */
 static QState gui_sheet_leave(Gui * const me, QStateHandler home)
 {
-    GuiListPage const * const list = gui_sheet_list_page(me, me->sheet);
+    GuiListPage const * const list = gui_sheet_back_page(me, home);
     QState                    status;
 
     if ( NULL != list )
