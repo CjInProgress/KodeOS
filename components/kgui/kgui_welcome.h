@@ -18,14 +18,7 @@ extern "C" {
 #define KGUI_WELCOME_DONE     "done"             /**< The person was greeted. */
 #define KGUI_WELCOME_TEXT     "You're all set."  /**< What Kody reads. */
 
-#define KGUI_WELCOME_GREET_MS 1800U  /**< From Kody starting to wake to the ring: kshell's GREET_DELAY_MS. */
-#define KGUI_WELCOME_RING_W   10     /**< The stroke: kshell's RING_W, and the app's own ring (KD_PB_GROSOR). */
-#define KGUI_WELCOME_FILL_MS  500U   /**< The last eighth fills: kshell's LAST_FILL_MS. */
-#define KGUI_WELCOME_POP_MS   99U    /**< Each half of the pop: kshell's DONE_POP_MS. */
-#define KGUI_WELCOME_POP_PX   4      /**< How much thicker at the top of the pop: kshell's, for a stroke under 20 px. */
-#define KGUI_WELCOME_HOLD_MS  2000U  /**< The closed ring stays: kshell's GREEN_HOLD_MS. */
-#define KGUI_WELCOME_FADE_MS  400U   /**< ...and goes: kshell's FADE_MS. */
-#define KGUI_WELCOME_FULL_PM  1000   /**< A whole last eighth, in thousandths. */
+#define KGUI_WELCOME_GREET_MS 1800U  /**< From Kody starting to wake to the greeting: kshell's GREET_DELAY_MS. */
 
 /** @brief The landing's mark, read once at boot. */
 typedef struct {
@@ -76,49 +69,6 @@ bool kgui_welcome_due(kgui_welcome_t *w, bool woke, bool bare, uint32_t now_ms);
  * @return true for `pending` and `done`.
  */
 bool kgui_welcome_word_ok(const char *word);
-
-/**
- * @brief The length of the ring's path.
- *
- * The path runs flush with the glass (410 x 502, corners of 114) for a stroke of
- * KGUI_WELCOME_RING_W: its middle 5 px in, corners of 109, clockwise from the top
- * middle, as kshell's edge at that width and the app's ring do.
- *
- * @return Its length, in pixels.
- */
-float kgui_welcome_path_len(void);
-
-/**
- * @brief The point a distance along the path.
- *
- * @param d How far from the top middle; past the end is the path's closing point.
- * @param x Receives the point's x, on the glass.
- * @param y Receives its y.
- */
-void kgui_welcome_path_at(float d, float *x, float *y);
-
-/**
- * @brief How much of the path the ring covers.
- *
- * @param pm How much of the last eighth is filled, 0 to KGUI_WELCOME_FULL_PM.
- * @return The length drawn, from seven eighths of the path to all of it.
- */
-float kgui_welcome_fill_len(int32_t pm);
-
-/**
- * @brief Put the ring on the glass, over everything, and run it to its end.
- *
- * The ring takes no touch and goes by itself; it needs no tick (lv_anim moves
- * it). LVGL's thread.
- *
- * @return true when LVGL had room for it.
- */
-bool kgui_welcome_ring_start(void);
-
-/**
- * @brief Take the ring off the glass now; nothing if it has gone. LVGL's thread.
- */
-void kgui_welcome_ring_stop(void);
 
 #ifdef __cplusplus
 }

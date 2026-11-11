@@ -14677,10 +14677,6 @@ static void gui_welcome_tick(Gui * const me)
         && kgui_welcome_due(&me->welcome, me->face_woke, gui_screen_bare(me, kgui_screen_face),
                             khal_time_ms()) )
     {
-        if ( !kgui_welcome_ring_start() )
-        {
-            KLOG_W(TAG, "welcome: no room for the ring; Kody reads the line alone");
-        }
         gui_visit(me, GUI_VISIT_NOTICE, KGUI_WELCOME_TEXT);
         gui_welcome_mark(KGUI_WELCOME_DONE);
         KLOG_N(TAG, "welcome: greeted, done");
@@ -29063,7 +29059,6 @@ static void gui_rest_enter(Gui * const me)
 {
     me->at_rest = true;
     gui_pill_clear(me);
-    kgui_welcome_ring_stop();
     gui_press_disarm(me);
     me->bot_hold = false;
     me->bot_face = false;

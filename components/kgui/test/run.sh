@@ -47,7 +47,7 @@ run_suite kgui_edge test_kgui_edge.c ../kgui_edge.c
 # The battery's liquid is pure too.
 run_suite kgui_fluid test_kgui_fluid.c ../kgui_fluid.c -lm
 # The landing after Welcome: its mark, its clock and the ring's path.
-run_suite kgui_welcome test_kgui_welcome.c ../kgui_welcome.c -lm
+run_suite kgui_welcome test_kgui_welcome.c ../kgui_welcome.c
 
 # The system cards' words read two enums and one call of kaos.h, whose QP and
 # FreeRTOS the host has not got: they are cut out of the SDK's own sources.
