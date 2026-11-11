@@ -24337,8 +24337,7 @@ static void gui_more_fill(Gui * const me)
     gui_sheet_header(me, NULL, KUI_COLOR_TEXT, "Settings", "");
     /* What a person looks for, first: the radios and the
      * battery, also here though their circles open them; the time; what
-     * changes where it stands; and the Dot itself last. The rail has no
-     * Self-test row. */
+     * changes where it stands; the self-test; and the Dot itself last. */
     gui_more_row(me, (uint8_t)GUI_MORE_WIFI);
     gui_more_row(me, (uint8_t)GUI_MORE_BLE);
     gui_more_row(me, (uint8_t)GUI_MORE_BAT);
@@ -24347,6 +24346,7 @@ static void gui_more_fill(Gui * const me)
     gui_more_row(me, (uint8_t)GUI_MORE_ZONE);
     gui_screen_fill_more(me);
     gui_rails_fill(me);
+    gui_more_row(me, (uint8_t)GUI_MORE_TEST);
     gui_more_row(me, (uint8_t)GUI_MORE_ABOUT);
 }
 
