@@ -166,18 +166,15 @@ jobs:
           docker image rm espressif/idf:v6.0.2 || true
           df -h /
 
-      # The welcome app is private and so is the SDK it pins (v00.00.29), so
-      # each has its own read-only deploy key. The app's
-      # source is cloned here on the runner; the SDK's key is staged in
-      # .ci-ssh/ for the component manager inside the build container.
+      # The welcome app is private and has its own read-only deploy key. Its
+      # source is cloned here on the runner. The SDK it pins is the public one.
       - name: Fetch the welcome app's source
         env:
           WELCOME_DEPLOY_KEY: ${{ secrets.WELCOME_DEPLOY_KEY }}
-          WELCOME_SDK_KEY: ${{ secrets.WELCOME_SDK_KEY }}
         run: |
           set -euo pipefail
           read -r repo _ pinned < apps_image/welcome.pin
-          mkdir -p ~/.ssh .ci-ssh
+          mkdir -p ~/.ssh
           install_key() {   # install_key <file> <secret>
             printf '%s\n' "$2" > "$1"
             chmod 600 "$1"
@@ -187,7 +184,6 @@ jobs:
             }
           }
           install_key ~/.ssh/welcome_deploy_key "$WELCOME_DEPLOY_KEY"
-          install_key .ci-ssh/welcome_sdk_key "$WELCOME_SDK_KEY"
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/welcome_deploy_key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=accept-new"
           git clone -q "$repo" build_welcome/src
           git -C build_welcome/src -c advice.detachedHead=false checkout -q "$pinned"
@@ -198,21 +194,13 @@ jobs:
           esp_idf_version: v6.1
           target: esp32p4
           # kodeOS pins the public SDK over HTTPS and needs no key. The
-          # welcome app pins the SDK by its old SSH address, which the git
-          # rewrite sends to the private copy of that SDK. The key is copied out of the
-          # workspace before use: ssh refuses a private key whose owner is not
-          # the user running it, and the workspace files belong to the runner
-          # while this container is its own user. IdentityAgent=none because
-          # there is no agent here and an inherited one would only mask which
-          # key actually works. The welcome app is built first: its app data
-          # goes into storage_image/, and the FAT image is made by kodeOS's
-          # own build. Pillow turns its icon into the board's format.
+          # welcome app pins the same SDK by its SSH address, which the git
+          # rewrite sends to HTTPS, so it needs no key either. The welcome app
+          # is built first: its app data goes into storage_image/, and the FAT
+          # image is made by kodeOS's own build. Pillow turns its icon into the
+          # board's format.
           command: |
-            mkdir -p /tmp/ci-ssh
-            cp .ci-ssh/welcome_sdk_key /tmp/ci-ssh/key
-            chmod 600 /tmp/ci-ssh/key
-            export GIT_SSH_COMMAND="ssh -i /tmp/ci-ssh/key -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/ci-ssh/known_hosts"
-            git config --global url."git@github.com:kodediy/kode-sdk-history.git".insteadOf "git@github.com:kodediy/kode-sdk.git"
+            git config --global url."https://github.com/kodediy/kode-sdk.git".insteadOf "git@github.com:kodediy/kode-sdk.git"
             python3 -m pip install --quiet pillow
             tools/build_welcome.sh
             idf.py -DPROJECT_VER=${{ steps.ver.outputs.version }} build
@@ -221,7 +209,7 @@ jobs:
       # before anything is packed or uploaded.
       - name: Remove the keys
         if: always()
-        run: rm -rf .ci-ssh ~/.ssh/welcome_deploy_key
+        run: rm -f ~/.ssh/welcome_deploy_key
 
       - name: Assemble release artifacts
         run: tools/assemble_release.sh "${{ steps.ver.outputs.version }}"
