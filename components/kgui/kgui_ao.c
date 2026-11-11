@@ -52,6 +52,7 @@
 #include "kgui_prefs.h"    /* the interface's two settings: keys, words, store */
 #include "kgui_scene_label.h" /* a scene's English words, for what the interface shows */
 #include "kgui_osrel.h"    /* kodeOS's own update: the service's answer and About's row */
+#include "kgui_span_label.h"  /* a length of time's English words, and the step round a setting's */
 #include "kgui_keyboard.h" /* the keypad card: a password or a hidden name, by multitap */
 #include "kgui_screens.h" /* this component's own screens and subjects */
 #include "kgui_motion.h"   /* the launcher's rail and motions: Step, Glide, Rubber, Slide */
@@ -1390,6 +1391,7 @@ typedef enum {
 #define GUI_TAG_SCREEN_LOCK    2U   /* the auto-lock time, opens its list   */
 #define GUI_TAG_SCREEN_REST    3U   /* Rest after: the time to Rest, stepped */
 #define GUI_TAG_SCREEN_SCENE   4U   /* Kody's scene, stepped                */
+#define GUI_TAG_SCREEN_OFF     5U   /* Turn off after: the time asleep, stepped */
 #define GUI_TAG_SCREEN_HAPTIC  6U   /* Haptics, stepped                     */
 #define GUI_TAG_SCREEN_3V3     7U   /* J3's 3.3 V, a switch                 */
 #define GUI_TAG_SCREEN_5V      8U   /* J3's 5 V, a switch                   */
@@ -1564,14 +1566,28 @@ static const GuiListPage s_list_pages[] = {
 #define GUI_ASCII_ZERO     48U
 
 /**
- * @brief The sequence numbers this AO puts on its requests of `vol`.
+ * @brief The key of the time asleep before the board turns itself off,
+ *        AO_LowPower's own setting (`config key="off_after"`).
+ *
+ * Kept where the console's `config` keeps it, as the volume is: this AO asks
+ * the owner by event, and the owner applies and stores. The words it offers
+ * and their order are read from the owner's row (kode_config_find()); kgui
+ * keeps no copy of them.
+ */
+#define GUI_OFF_KEY        "off_after"
+
+/**
+ * @brief The sequence numbers this AO puts on its requests of `vol` and of
+ *        `off_after`.
  *
  * The console numbers its own from 1 and only takes the answer to the one in
- * flight; the top bit keeps these two out of its way, and says in the answer
- * which of the two it is.
+ * flight; the top bit keeps these out of its way, and says in the answer
+ * which request it is.
  */
 #define GUI_VOL_SEQ_READ   0x80000001U   /**< Ask what the volume is. */
 #define GUI_VOL_SEQ_SET    0x80000002U   /**< Set it and keep it. */
+#define GUI_OFF_SEQ_READ   0x80000003U   /**< Ask what the time asleep before OFF is. */
+#define GUI_OFF_SEQ_SET    0x80000004U   /**< Set it and keep it. */
 #define GUI_ZONE_SEQ_BASE  0x80000100U   /**< kgui's own `zone` requests start here: the top half, which the console's counter never reaches. */
 #define GUI_ZONE_SEQ_MASK  0x0000FFFFU   /**< How far they count before they wrap. */
 
@@ -2877,6 +2893,10 @@ typedef struct {
                                *   it, or the pad moved it and the request
                                *   was refused. The release, the next pad
                                *   press or the screen's exit keeps it. */
+    char     off_word[KODE_CONFIG_VALUE_MAX + 1U];
+                             /**< The time asleep before the board turns
+                               *   itself off, as AO_LowPower says it; empty
+                               *   until it has answered. */
     uint8_t  soc;            /**< Charge left, in percent: the Battery
                                *   sheet's bar.                             */
     uint8_t  bat_state;      /**< What that much means: GUI_SET_BAT_*.      */
@@ -3158,6 +3178,8 @@ static void gui_vol_set(Gui * const me, int32_t pct, bool persist);
 static void gui_vol_keep(Gui * const me);
 static void gui_vol_ask(void);
 static void gui_vol_answer(Gui * const me, KodeConfigAnsEvt const * const a);
+static void gui_off_after_ask(void);
+static void gui_off_after_answer(Gui * const me, KodeConfigAnsEvt const * const a);
 static GuiSetLook gui_set_look(uint8_t which);
 static GuiSetLook gui_more_look(uint8_t which);
 static void gui_sheet_rest_take(Gui const * const me);
@@ -22131,6 +22153,73 @@ static void gui_vol_ask(void)
     (void)gui_vol_send(false, 0U);
 }
 
+/**
+ * @brief Ask AO_LowPower for the `off_after` setting: read it, or set and
+ *        store it.
+ *
+ * The same door as the volume's (gui_vol_send()). A set names the word by
+ * its place in the owner's list, as the console's does.
+ *
+ * @param set true to set the word at @p at; false to only read.
+ * @param at  The word's place in the owner's list.
+ * @return true when the request is posted.
+ */
+static bool gui_off_after_send(bool set, uint8_t at)
+{
+    KodeConfigReqEvt * const e = Q_NEW_X(KodeConfigReqEvt, 1U, CONFIG_REQ_SIG);
+
+    if ( NULL == e )
+    {
+        return false;
+    }
+    e->seq = GUI_OFF_SEQ_READ;
+    if ( set )
+    {
+        e->seq = GUI_OFF_SEQ_SET;
+    }
+    e->set = set;
+    (void)snprintf(e->key, sizeof(e->key), "%s", GUI_OFF_KEY);
+    e->i    = 0;
+    e->b    = false;
+    e->e    = at;
+    e->s[0] = '\0';
+    return kode_config_post(e, &l_gui.super);
+}
+
+/**
+ * @brief Ask the board's rest what the time asleep before OFF is.
+ *
+ * Posted on every entry into the control centre, as the volume is: the
+ * console's `config key="off_after"` can have moved it while this screen was
+ * away.
+ */
+static void gui_off_after_ask(void)
+{
+    (void)gui_off_after_send(false, 0U);
+}
+
+/**
+ * @brief An answer that says the time asleep before OFF.
+ *
+ * Taken whoever asked: the console's `config key="off_after"` moves the row
+ * as this AO's own step does. A refused set still says the word in force.
+ *
+ * @param me The AO.
+ * @param a  The answer; one about another setting is not here to be read.
+ */
+static void gui_off_after_answer(Gui * const me, KodeConfigAnsEvt const * const a)
+{
+    if ( (strcmp(a->key, GUI_OFF_KEY) == 0) && ('\0' != a->value[0])
+        && (strcmp(a->value, me->off_word) != 0) )
+    {
+        (void)snprintf(me->off_word, sizeof(me->off_word), "%s", a->value);
+        if ( GUI_SHEET_MORE == me->sheet )
+        {
+            gui_sheet_refill(me);
+        }
+    }
+}
+
 #define GUI_NVS_KEY_VIB  "volvib"   /* kgui/volvib: the volume stands on the vibrate stop. */
 
 /** @brief What the speaker is given for the level on the bar. */
@@ -31147,6 +31236,42 @@ static void gui_screen_lock(Gui * const me, int8_t dir)
     gui_sheet_refill(me);
 }
 
+/**
+ * @brief Turn off after: step the time asleep round the words AO_LowPower
+ *        offers.
+ *
+ * The words and their order are the owner's row (kode_config_find()). The row
+ * shows the new word at once; the owner's answer is the one that stays
+ * (gui_off_after_answer()). A step nobody could be asked for thuds.
+ *
+ * @param me  The AO.
+ * @param dir -1 for the one before, else the one after.
+ * @return true when the owner was asked for the new time.
+ */
+static bool gui_screen_off(Gui * const me, int8_t dir)
+{
+    const kode_config_t * const row = kode_config_find(GUI_OFF_KEY);
+    bool asked = false;
+
+    if ( (NULL != row) && (NULL != row->enums) && (0U < row->n_enums) )
+    {
+        uint8_t const at = kgui_span_next(row->enums, row->n_enums, me->off_word, dir);
+
+        if ( (at < row->n_enums) && gui_off_after_send(true, at) )
+        {
+            (void)snprintf(me->off_word, sizeof(me->off_word), "%s", row->enums[at]);
+            KLOG_N(TAG, "turn off after: %s asked", row->enums[at]);
+            gui_sheet_refill(me);
+            asked = true;
+        }
+    }
+    if ( !asked )
+    {
+        (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
+    }
+    return asked;
+}
+
 /** @brief A setter of one of the Screen card's switches. */
 typedef void (*gui_flag_set_fn)(Gui * const me, bool on);
 
@@ -31176,8 +31301,8 @@ static bool gui_screen_flip(Gui * const me, int8_t step, gui_flag_set_fn set,
 /**
  * @brief Act on one of the Screen card's settings rows.
  *
- * Rest after, Kody's scene and Haptics step round their values on the top
- * button, a tap and right, and back on left. Stay awake on USB and the
+ * Rest after, Turn off after, Kody's scene and Haptics step round their
+ * values on the top button, a tap and right, and back on left. Stay awake on USB and the
  * header's two supplies are switches, on the top button and a tap. Whatever changed
  * clicks after it changes, so the level that was just chosen is the one felt.
  *
@@ -31202,6 +31327,10 @@ static void gui_screen_act(Gui * const me, uint16_t tag, int8_t step)
         }
         case GUI_TAG_SCREEN_REST: {
             gui_screen_rest(me, dir);
+            break;
+        }
+        case GUI_TAG_SCREEN_OFF: {
+            changed = gui_screen_off(me, dir);
             break;
         }
         case GUI_TAG_SCREEN_SCENE: {
@@ -31405,11 +31534,13 @@ static void gui_screen_row(Gui * const me, uint16_t tag, const char *name,
 
 /**
  * @brief The Screen card's settings after the brightness and the auto-lock:
- *        Rest after, Kody's scene, Haptics, Motion and
+ *        Rest after, Turn off after, Kody's scene, Haptics, Motion and
  *        Stay awake on USB.
  *
  * Each row says its value in the second line; a switch wears Kody blue when it
  * is on and says "On", so colour is never the only sign. The card scrolls.
+ * Turn off after is AO_LowPower's setting and has a row only in a build that
+ * has it.
  *
  * @param me The AO.
  */
@@ -31420,6 +31551,12 @@ static void gui_screen_fill_more(Gui * const me)
     gui_screen_row(me, (uint16_t)GUI_TAG_SCREEN_REST, "Sleep after",
                    gui_lock_choice(asleep)->label, false, false,
                    &kui_glyph_moon_30);
+    if ( kode_config_find(GUI_OFF_KEY) != NULL )
+    {
+        gui_screen_row(me, (uint16_t)GUI_TAG_SCREEN_OFF, "Turn off after",
+                       kgui_span_label(me->off_word), false, false,
+                       &kui_glyph_power_30);
+    }
     gui_screen_row(me, (uint16_t)GUI_TAG_SCREEN_SCENE, "Kody's scene",
                    kgui_scene_label(gui_scene_word(me)), false, false,
                    &kui_glyph_scene_30);
@@ -32762,8 +32899,9 @@ static QState Gui_initial(Gui * const me, void const * const par)
     }
 #endif
     QActive_subscribe(&me->super, GUI_DUMP_REQ_SIG);
-    /* The answers to the volume this AO asks for (gui_vol_answer()) and to
-     * every `zone` request (gui_zone_answer()). */
+    /* The answers to the volume this AO asks for (gui_vol_answer()), to
+     * every `off_after` request (gui_off_after_answer()) and to every `zone`
+     * request (gui_zone_answer()). */
     QActive_subscribe(&me->super, CONFIG_ANS_SIG);
     QActive_subscribe(&me->super, TOUCH_EVT_SIG);
     /* The two listings are not subscribed: their pages are posted to the AO
@@ -33114,6 +33252,7 @@ static void gui_settings_ask(void)
 {
     display_state_request();
     gui_vol_ask();
+    gui_off_after_ask();
 #if CONFIG_KODEOS_WIFI
     wifi_state_request();
 #if CONFIG_KODEOS_CHANNEL
@@ -34676,10 +34815,12 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
             break;
         }
         case CONFIG_ANS_SIG: {
-            /* The speaker's level, asked on every entry into the control
-             * centre (gui_vol_ask()), and the zone AO_Boot answers
+            /* The speaker's level and the time asleep before OFF, asked on
+             * every entry into the control centre (gui_vol_ask(),
+             * gui_off_after_ask()), and the zone AO_Boot answers
              * (gui_zone_answer()). Every other answer is let go. */
             gui_vol_answer(me, Q_EVT_CAST(KodeConfigAnsEvt));
+            gui_off_after_answer(me, Q_EVT_CAST(KodeConfigAnsEvt));
             gui_zone_answer(me, Q_EVT_CAST(KodeConfigAnsEvt));
             status = Q_HANDLED();
             break;
