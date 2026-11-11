@@ -769,7 +769,7 @@ _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
 
 /** A scan asked and never answered is given up after this long, and the next
  *  period asks again: the page searches by itself and has no button to search
- *  again (Luismi, 4-nov), so it must never wait on a lost answer. Past the
+ *  again, so it must never wait on a lost answer. Past the
  *  driver's own ceiling on a sweep and on its last step: asking while the
  *  first is still running is refused with an empty listing, and at 20 s that
  *  was what blanked the page (75dba1c). */
@@ -1087,7 +1087,7 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
  *         no button and no finger before the face comes back is the owner's
  *         to choose on the Screen sheet (s_locks), and is counted only while
  *         nothing else is under way - see gui_idle_check(). */
-#define GUI_LOCK_DEFAULT_S  60U    /* a minute without input locks (Luismi, 4-nov: reasonable times) */
+#define GUI_LOCK_DEFAULT_S  60U    /* a minute without input locks (reasonable times) */
 
 /** @brief Kody's sleep time while he follows the auto-lock's: no seconds of
  *         its own, and what a board with nothing stored does. */
@@ -1402,7 +1402,7 @@ typedef enum {
 #define GUI_TAG_BLE_SWITCH    40U   /* the BLE stack, on or off             */
 #define GUI_TAG_BLE_CONSOLE   41U   /* a central is on the console          */
 #define GUI_TAG_BLE_BONDS     42U   /* how many peers are remembered        */
-#define GUI_BLE_PREFIX        "KODE "  /* What the apps look for: always there (Luismi, 5-nov). */
+#define GUI_BLE_PREFIX        "KODE "  /* What the apps look for: always there. */
 #define GUI_BLE_TYPED_MAX     15U      /* What a person types after it. */
 #define GUI_BLE_NAME_MAX      20U      /* The whole name; the scan response holds 29. */
 #define GUI_NVS_KEY_BLE_NAME  "blename"
@@ -4583,7 +4583,7 @@ static void gui_page_scroll_stop(void)
  *
  * A page with no circle under it, and a level deeper or back, fades in over
  * the whole glass, as a folder does (gui_level_grow_start()): nothing in
- * Settings slides along the glass (Luismi, 6-nov).
+ * Settings slides along the glass.
  *
  * The page is a live card over the screen under it, and a pass of it costs
  * 75-95 ms: faded live, it would move a few frames a second. So it moves on
@@ -4805,7 +4805,7 @@ static void gui_sheet_slide(Gui * const me, bool in)
  * A page that opens another over itself, and the way back, are taken over in
  * place (gui_sheet_fill_again_as()): the card stays on the glass and its rows
  * are written again. The new rows fade in over the old ones, in a folder's
- * time and easing (Luismi, 6-nov: no slide, by the criterion of the rest).
+ * time and easing (no slide, by the criterion of the rest).
  * Never from a circle, even on the way back to a page that stands on one: it
  * is already on the glass. Pictures that could not be taken cut it.
  *
@@ -5268,8 +5268,8 @@ static bool ui_build(Gui * const me)
                     "launcher's title stays left-aligned");
     }
 
-    /* THE EMPTY STATE STANDS AT KSHELL'S PLACES (kodediy/kode-dot-os,
-     * kshell_apps.c build_empty): the title at y KGUI_EMPTY_TITLE_Y, the
+    /* THE EMPTY STATE STANDS AT KSHELL'S PLACES (kshell_apps.c
+     * build_empty): the title at y KGUI_EMPTY_TITLE_Y, the
      * card at KGUI_EMPTY_CARD_Y and the address at KGUI_EMPTY_URL_Y. flex
      * offers only ONE pad_row per container, so the pad_row of both boxes is
      * zeroed and every gap is the child's own margin-top, worked out from
@@ -5766,7 +5766,7 @@ static bool gui_row_cut(Gui const * const me, int32_t cy, kgui_rail_t const *edg
 {
     /* KGUI_RAIL_TOP is the corner's business, for where a row is pushed in. A
      * whole row above it, the first of a full list, is a row like any other
-     * (Luismi, 5-nov: it could not be opened): only one the title or the glass
+     * (it could not be opened): only one the title or the glass
      * cuts is merely focused. */
     int32_t const top = ((uint8_t)GUI_LEVEL_GROUP == me->level) ? KGUI_BACKBAR_FOOT : 0;
 
@@ -6028,7 +6028,7 @@ static void gui_row_disc(Gui * const me, uint8_t row)
         const char * const name   = me->groups[r->idx].name;
         const lv_image_dsc_t * const art = kgui_folder_art(name);
         /* The light disc, with each folder's own drawing in Soft Black and a
-         * touch of Bold Yellow (Luismi, 5-nov). */
+         * touch of Bold Yellow. */
         lv_color_t const   ground = lv_color_hex(KUI_PALETTE_MEDIUM_GREY);
         lv_color_t const   ink    = KUI_COLOR_TEXT;
 
@@ -6064,7 +6064,7 @@ static void gui_row_disc(Gui * const me, uint8_t row)
         else
         {
             /* No picture: the app's colour or Medium Grey, with the first two
-             * letters of its name (Jorge, 2026-11-03). */
+             * letters of its name. */
             char mono[3];
 
             gui_mono_letters(face, mono);
@@ -6394,7 +6394,7 @@ static bool gui_list_tops(Gui const * const me)
  * @brief Where the first row's middle starts in a list that starts at the top.
  *
  * @param me The AO.
- * @return Below the shelf with one up (Luismi, 5-nov), else KGUI_LIST_FIRST_Y.
+ * @return Below the shelf with one up, else KGUI_LIST_FIRST_Y.
  */
 static float gui_list_first_y(Gui const * const me)
 {
@@ -6600,7 +6600,7 @@ static void gui_list_place(Gui * const me)
     {
         /* A root with a shelf has its first row on the focus line at rest,
          * the shelf one pitch above it. A list that fills the glass starts at
-         * its top (Luismi, 5-nov); a shorter one is a centred block. */
+         * its top; a shorter one is a centred block. */
         uint32_t const scroll_n = kgui_shelf_scroll_rows(me->row_count, gui_shelf_shown(me));
         float const   offset = gui_list_tops(me) ? kgui_rows_top_scroll_at(me->list_u, gui_list_first_y(me))
                                                  : kgui_rows_scroll(me->list_u, scroll_n);
@@ -8990,8 +8990,8 @@ static GuiTouchZone gui_gesture_zone(Gui * const me, int32_t x, int32_t y)
     {
         /* Down pulls Settings (from anywhere on the glass). A swipe left or
          * right opens Apps by that
-         * side (gui_side_lift()), and the way back mirrors it (Luismi,
-         * 4-nov). A swipe up is nothing. (A tap opens Apps too, but it is no
+         * side (gui_side_lift()), and the way back mirrors it. A swipe up
+         * is nothing. (A tap opens Apps too, but it is no
          * drag and has no zone here: gui_face_tap().) */
         zone.allowed = (uint8_t)(KUI_GESTURE_DIR_HORZ | KUI_GESTURE_DIR_DOWN);
         zone.horz    = GUI_KIND_APPS;
@@ -9015,8 +9015,8 @@ static GuiTouchZone gui_gesture_zone(Gui * const me, int32_t x, int32_t y)
                 /* Up and down move the list. */
                 zone.allowed = (uint8_t)(zone.allowed | KUI_GESTURE_DIR_VERT);
                 zone.vert    = GUI_KIND_SCROLL;
-                /* Down pulls Settings over Apps, and it goes back to Apps
-                 * (Luismi, 5-nov): from the top edge of the glass wherever the
+                /* Down pulls Settings over Apps, and it goes back to Apps:
+                 * from the top edge of the glass wherever the
                  * list stands, and from anywhere on it with a list that has
                  * nowhere lower to go. A finger on a row moves the list. */
                 if ( (KGUI_LIST_PULL_BAND > y) || gui_zone_lock_pull(me, y) )
@@ -9481,7 +9481,7 @@ static void gui_level_change(Gui * const me)
     /* The rebuild waits for the tick: the change can come from the click of
      * the very row it deletes, and LVGL does not allow an object to be deleted
      * inside its own event. Then the new rows fade in where the old ones were
-     * (Luismi, 5-nov: no slide; the door the face takes). */
+     * (no slide; the door the face takes). */
     gui_list_finish(me);
     me->slide     = GUI_SLIDE_OUT;
     me->slide_x   = 0.0F;
@@ -9603,8 +9603,7 @@ static bool gui_level_back(Gui * const me, const char *source)
  */
 static void gui_level_home(Gui * const me)
 {
-    /* Apps opens on the rail, never on the shelf (Luismi has not approved
-     * the design's entry on the latest recent: DISENO.md, «Para Luismi»). */
+    /* Apps opens on the rail, never on the shelf. */
     gui_shelf_drop(me);
     if ( (uint8_t)GUI_LEVEL_GROUP == me->level )
     {
@@ -13695,7 +13694,7 @@ static void gui_launch_end(void)
 
 /**
  * @brief Back while the scene flies: out to where it began, at once, and
- *        nothing runs (Luismi, 5-nov).
+ *        nothing runs.
  *
  * Until the run is asked for, which is the end of the fade: past that the
  * board is on its way and nothing calls it back. The press is spent here, so
@@ -14001,7 +14000,7 @@ static void gui_evict_end(Gui * const me, AppEvictEndEvt const * const e)
     }
     else
     {
-        /* Room is made and nobody is asked (Luismi, 5-nov: it loads, and that
+        /* Room is made and nobody is asked (it loads, and that
          * is it). AO_AppMgr keeps what goes on the card first; a copy that
          * fails stops the install with nothing removed (KFAIL_KEEP). */
         KLOG_N(TAG, "install: %u app(s) make room for %s", (unsigned)e->victims,
@@ -18268,7 +18267,7 @@ static void gui_off_fill(Gui * const me)
     kgui_sys_text(&me->sys, KGUI_SYS_ROOM_TOP, KGUI_SYS_ROOM_END, NULL, NULL, NULL);
     if ( me->vbus )
     {
-        /* Luismi, 4-nov: on the cable it cannot turn off, so the card is
+        /* On the cable it cannot turn off, so the card is
          * only the message, large and centred, with no power glyph, and its
          * one button is OK, which closes it. */
         role = GUI_ACT_PRIMARY;
@@ -18278,7 +18277,7 @@ static void gui_off_fill(Gui * const me)
     else
     {
         /* The big red power glyph and the Turn off button say it all: no
-         * title and no caption (Luismi, 4-nov), larger and a little above the
+         * title and no caption, larger and a little above the
          * middle (5-nov). */
         kgui_sys_message(&me->sys, NULL);
         kgui_sys_glyph_mid(&me->sys, &kgui_glyph_power_180, KUI_COLOR_DANGER);
@@ -19657,7 +19656,7 @@ static void gui_sheet_action_act(Gui * const me)
             if ( me->vbus )
             {
                 /* On the cable the card only says why it cannot: its OK
-                 * closes it (Luismi, 4-nov). */
+                 * closes it. */
                 KLOG_N(TAG, "turn off: on the cable; OK closes the card");
                 gui_sheet_close(me);
                 break;
@@ -19775,7 +19774,7 @@ static void gui_sheet_header_tint(Gui const * const me, lv_color_t ink)
 }
 
 /**
- * @brief A settings page's title and its arrow back (Luismi, 5-nov).
+ * @brief A settings page's title and its arrow back.
  *
  * On the card, over the body: it stays at the top and the rows pass under it.
  *
@@ -20092,7 +20091,7 @@ static lv_obj_t *gui_sheet_row_core(Gui * const me, const char *name,
  * name and a value, a row every 104 px, the focused row always at y 215. The
  * body is padded so row 0 and the last row can both reach that height. The
  * rows stand at one x, a flat list, and fade near the clip's edges
- * (gui_rail_follow()). The look is kodediy/kode-dot-os, kshell_rail.c.
+ * (gui_rail_follow()). The look is kshell's, kshell_rail.c.
  */
 
 /** @brief What the sheet's header is when it is the kit's, kept to put it back. */
@@ -20170,7 +20169,7 @@ static void gui_sheet_page_dress(Gui * const me)
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
         lv_obj_set_x(me->sheet_body, 0);
         /* The rows go out by the glass's own edges, not by a square frame
-         * inside it (Luismi, 5-nov): the body runs to the glass, and what
+         * inside it: the body runs to the glass, and what
          * was its margin is padding. Under a pinned switch it starts at the
          * switch, for the rows to pass beneath it. */
         lv_obj_set_y(me->sheet_body, gui_sheet_pins(me->sheet) ? KGUI_PAGE_BODY_Y : 0);
@@ -20181,7 +20180,7 @@ static void gui_sheet_page_dress(Gui * const me)
         /* kshell's rail ends (kshell_rail.c rail_offset()): row 0 starts at
          * the top of the page with the ring on it, and the last row ends at
          * its foot, so a page never opens on a black third (ui-dot 06). The
-         * Wi-Fi and Bluetooth pages have no header either (Luismi, 4-nov: no
+         * Wi-Fi and Bluetooth pages have no header either (no
          * titles at the top): their switch stands pinned at that same top
          * (gui_sheet_pin_first()), in the room the padding keeps for it, and
          * the list scrolls under it. */
@@ -21054,12 +21053,12 @@ static const GuiWriteWords *gui_write_words(uint8_t what)
               "card from apps.kode.diy." },
         },
         [KWRITE_APP_RUN] = {
-            NULL, NULL, "Didn't open",   /* Luismi, 5-nov: no word, it is obviously loading */
+            NULL, NULL, "Didn't open",   /* No word, it is obviously loading */
             { "The file is missing", "or damaged. Copy it to the",
               "card from apps.kode.diy." },
         },
         [KWRITE_OS] = {
-            NULL, NULL, "Didn't update",   /* Luismi, 5-nov: it adds nothing */
+            NULL, NULL, "Didn't update",   /* It adds nothing */
             { "Nothing changed.", "kodeOS keeps running", "the version it had." },
         },
         [KWRITE_C5] = {
@@ -21316,9 +21315,9 @@ static void gui_opening_progress(Gui * const me)
     }
     kgui_sys_figure(&me->sys, shown);
     kgui_sys_hero(&me->sys, gui_write_name(me, gui_sheet_card_row(me)), second);
-    /* What is on the glass, centred on it (Luismi, 5-nov): kodeOS's word and
+    /* What is on the glass, centred on it: kodeOS's word and
      * figure run from y 84 to 288, an app's disc, figure and name from 52 to 384,
-     * and with a line under them to 424, with room between them (Luismi, 5-nov). */
+     * and with a line under them to 424, with room between them. */
     if ( (uint8_t)KWRITE_OS == me->write_what )
     {
         kgui_sys_lift(&me->sys, GUI_WRITE_LIFT_OS);
@@ -21332,7 +21331,7 @@ static void gui_opening_progress(Gui * const me)
         kgui_sys_lift(&me->sys, GUI_WRITE_LIFT_LINE);
     }
     /* No note under it: the loading screen is the app, its name, the figure
-     * and the edge, and nothing more (Luismi, 4-nov: loading screens as
+     * and the edge, and nothing more (loading screens as
      * simple as they can be). */
     kgui_sys_note(&me->sys, NULL);
 }
@@ -21700,7 +21699,7 @@ static void gui_sheet_fill_again(Gui * const me)
 #endif
     /* The same list, new words: it stays where it stood. Selecting here took
      * it to the focus line again, an animation on every toggle and on every
-     * scan's answer (Luismi, 5-nov). */
+     * scan's answer. */
     if ( gui_sheet_mark(me, want) && (NULL != me->sheet_body) )
     {
         lv_obj_update_layout(me->sheet_body);
@@ -22429,7 +22428,7 @@ static void gui_wifi_fill(Gui * const me)
     }
     gui_sheet_header(me, look.glyph, disc, "", sub);
 
-    /* No header over the page (Luismi, 4-nov: no titles at the top): the
+    /* No header over the page (no titles at the top): the
      * switch, pinned first, says what the radio is doing - off, on, or the
      * network it is on. */
     lv_obj_t * const sw = gui_sheet_row(me, "Wi-Fi", sub, row, look.glyph, NULL);
@@ -22818,7 +22817,7 @@ static void gui_kbd_fill(Gui * const me)
         }
         if ( NULL != handle )
         {
-            /* Nothing over the field: no handle, no title (Luismi, 4-nov).
+            /* Nothing over the field: no handle, no title.
              * BOT and a drag from the top band still close the card. */
             lv_obj_set_hidden(handle, true);
         }
@@ -23514,7 +23513,7 @@ static void gui_ble_fill(Gui * const me)
     gui_sheet_header(me, look.glyph, disc, "",
                      khal_identity_valid() ? khal_identity_serial()
                                            : "KODE-DOT");
-    /* No header over the page (Luismi, 4-nov: no titles at the top): the
+    /* No header over the page (no titles at the top): the
      * switch, pinned first, says what the radio is doing. */
 
     if ( gui_sheet_row(me, "Bluetooth", state, row, look.glyph, NULL) == NULL )
@@ -23532,7 +23531,7 @@ static void gui_ble_fill(Gui * const me)
         return;
     }
 
-    /* The name to look for in the app (Luismi, 5-nov): the serial, as it is
+    /* The name to look for in the app: the serial, as it is
      * advertised, never the printed form; a chosen one as it was typed. */
     if ( gui_sheet_row(me, "Visible as", gui_ble_name_shown(me),
                       KUI_COLOR_SURFACE, &kui_glyph_info, NULL) != NULL )
@@ -23671,7 +23670,7 @@ static lv_obj_t *gui_ble_dot(Gui const * const me)
  * @brief A switch of a radio pressed: the page says so at once.
  *
  * The person has said what they want and the radio's seconds on the way there
- * are not theirs to wait for (Luismi, 5-nov). The radio's own announcements
+ * are not theirs to wait for. The radio's own announcements
  * only take over once they agree, or after GUI_WISH_LOST_MS (gui_wish_lost()).
  *
  * @param me The AO.
@@ -24336,7 +24335,7 @@ static void gui_more_row(Gui * const me, uint8_t which)
 static void gui_more_fill(Gui * const me)
 {
     gui_sheet_header(me, NULL, KUI_COLOR_TEXT, "Settings", "");
-    /* What a person looks for, first (Luismi, 5-nov): the radios and the
+    /* What a person looks for, first: the radios and the
      * battery, also here though their circles open them; the time; what
      * changes where it stands; and the Dot itself last. The rail has no
      * Self-test row. */
@@ -25297,7 +25296,7 @@ static void on_sheet_row_clicked(lv_event_t *e)
         return;
     }
     /* In the place it stands: a finger points at what it sees, and the list
-     * does not move under it (Luismi, 5-nov). The pad's walk does move it. */
+     * does not move under it. The pad's walk does move it. */
     (void)gui_sheet_mark(&l_gui, idx);
     gui_sheet_act(&l_gui, idx, 0);
 }
@@ -25340,7 +25339,7 @@ static void on_sheet_action_clicked(lv_event_t *e)
 /**
  * @brief Back during a load: out to the list at once, and nothing is asked.
  *
- * Back has already said it (Luismi, 5-nov). A request still held for its card
+ * Back has already said it. A request still held for its card
  * never goes; one that went is called off, and its end says nothing.
  *
  * @param me The AO, its Opening card up.
@@ -26434,8 +26433,8 @@ static void gui_face_navigate(Gui * const me, kdrv_button_t b, bool pressed)
             }
             me->bot_armed = false;
             me->bot_face  = false;
-            /* Pressed and let go, the Lock rests, at once: no hold to wait for
-             * (Luismi, 5-nov). Held on, the arc begins and the release does
+            /* Pressed and let go, the Lock rests, at once: no hold to wait
+             * for. Held on, the arc begins and the release does
              * nothing here. For a second after a wake nothing rests it again
              * (the apocrifa's REST_AFTER_WAKE_MS: the same button read twice). */
             uint32_t const now  = khal_time_ms();
@@ -27444,7 +27443,7 @@ static void gui_tick_now(Gui * const me)
 /**
  * @brief The first press of the top button at Rest, or its end.
  *
- * Luismi's two-press wake (3-nov), as the apocrifa does it. On: Kody alone
+ * The two-press wake, as the apocrifa does it. On: Kody alone
  * wakes, in colour, from the frame he stands on; the glass comes back to the
  * stored level, so the clock, the date and the battery are kept low by
  * object (kgui_screen_face_dim()), and "Press ● again" takes the date's
@@ -27477,7 +27476,7 @@ static void gui_rest_knock(Gui * const me, bool on)
     {
         kgui_hint_dismiss();
         /* Kody alone in colour - his blue and his face - over the outline of
-         * the rest of his scene, which is the point (Luismi, 4-nov): by the
+         * the rest of his scene, which is the point: by the
          * veil, never at once (5-nov). */
         if ( (NULL != row) && (NULL != row->peek) )
         {
@@ -27500,7 +27499,7 @@ static void gui_rest_knock(Gui * const me, bool on)
         /* Rest is over: gui_rest_leave() has the face. */
     }
     /* The glass stays at the Rest level through the knock, so the outline and
-     * the hour stay as they are (Luismi, 5-nov); only a knock that cut the fall
+     * the hour stay as they are; only a knock that cut the fall
      * short has the dimming to do yet. */
     if ( me->at_rest && !me->rest_dimmed )
     {
@@ -27775,7 +27774,7 @@ static void gui_veil_take(Gui * const me)
             (void)memcpy(me->veil_px, buf->data, px_bytes);
             /* The canvas is transparent where Kody is not: through a veil like
              * that the next frame's scene shows at once, a flash. Opaque, over
-             * the face's black, the whole frame fades in (Luismi, 5-nov).
+             * the face's black, the whole frame fades in.
              * Premultiplied, so the colours stay as they are. */
             for ( uint32_t y = 0U; y < buf->header.h; ++y )
             {
@@ -28117,7 +28116,7 @@ static void gui_deep_poke(Gui * const me)
 /**
  * @brief The deep rest is near: the glass goes black and says so, with a count.
  *
- * Luismi, 5-nov: the deepest rest turns the screen off, but it says so five
+ * The deepest rest turns the screen off, but it says so five
  * seconds before. The black it fades to is the black it sleeps on.
  *
  * @param me The AO.
@@ -28218,7 +28217,7 @@ static void gui_deep_tick(Gui * const me)
             if ( (!me->deep_fading) && ((int32_t)GUI_DEEP_FADE_MS >= left) )
             {
                 /* The words go while the link is up: the last frame the panel
-                 * holds has to be the black one (Luismi, 5-nov: «Going to
+                 * holds has to be the black one («Going to
                  * sleep» stayed written on the sleeping glass). */
                 lv_obj_t * const both[] = { me->deep_digit, me->deep_words };
 
@@ -28266,7 +28265,7 @@ static void gui_deep_tick(Gui * const me)
 /**
  * @brief Any input at Rest but the top button: say how the Dot wakes.
  *
- * Somebody wants in (Luismi, 5-nov): the screen, the pad and the red button
+ * Somebody wants in: the screen, the pad and the red button
  * ask for the blue one, twice. Kody stays asleep; only the knock wakes him.
  *
  * @param me The AO.
@@ -28589,7 +28588,7 @@ static uint32_t gui_tick_wait(Gui const * const me, uint32_t lvgl_next)
         if ( me->rest_hint && ((khal_time_ms() - me->rest_hint_ms) < KGUI_VEIL_MS) )
         {
             /* The words come in on these frames: at Rest's pace they would
-             * wait a second for the first (Luismi, 5-nov). */
+             * wait a second for the first. */
             wait = (KODE_GUI_TICK_MS > lvgl_next) ? lvgl_next : KODE_GUI_TICK_MS;
         }
         if ( ((uint8_t)GUI_FALL_NONE != me->rest_fall) || (NULL != me->veil) )
@@ -28668,7 +28667,7 @@ static void gui_rest_leave(Gui * const me)
     gui_veil_show(me);
     kgui_hint_dismiss();
     /* Rest moved the content to save the panel. Home at a stroke is the jump
-     * between the sleeping Kody and the waking one (Luismi, 5-nov; measured up
+     * between the sleeping Kody and the waking one (measured up
      * to 4 px on the Dot): it goes home while he leaps. The next Rest starts
      * from home, as the apocrifa's does (kshell_face.c). */
     kgui_screen_face_home(GUI_REST_HOME_DELAY_MS, GUI_REST_HOME_MS);
@@ -28870,7 +28869,7 @@ static void gui_face_kody_tick(Gui * const me)
  *
  * The face first seen behind a curtain, back from an app: the first frame was
  * Apps, so nobody woke him, and the curtain's picture would be a face without
- * him, who comes in when it lands (Luismi, 5-nov). The first_hold's rule holds
+ * him, who comes in when it lands. The first_hold's rule holds
  * here too: he is there from the first frame of the fade. The wake-up that
  * plays when the face lands starts from this very frame, so nothing jumps.
  * Nothing moves until then: he is paused (gui_kody_stand()).
@@ -30386,7 +30385,7 @@ static const char *const s_clock_words[] = { "24h", "12h" };
  */
 static const uint32_t s_sleeps[] = { GUI_SLEEP_LOCK, 30U, 60U, 300U, 600U, 0U };
 
-/** @brief The face rests after half a minute untouched on a board with nothing stored (the apocrifa's is a minute; Luismi, 4-nov: reasonable times). */
+/** @brief The face rests after half a minute untouched on a board with nothing stored (the apocrifa's is a minute; reasonable times). */
 #define GUI_SLEEP_DEFAULT_S 60U   /* the apocrifa's CONFIG_KODEOS_SHELL_IDLE_DEFAULT_S */
 
 /** @brief Their words, in s_sleeps' order. */
@@ -31008,7 +31007,7 @@ static uint8_t gui_ring_next(uint8_t at, uint8_t n, int8_t dir)
  */
 static void gui_screen_rest(Gui * const me, int8_t dir)
 {
-    /* One time for the person (Luismi, 5-nov): the auto-lock and the rest go
+    /* One time for the person: the auto-lock and the rest go
      * together. s_locks has the choices. */
     uint32_t const now = (GUI_SLEEP_LOCK == me->sleep_s) ? me->lock_s : me->sleep_s;
     GuiLock const * const next = &s_locks[gui_ring_next(gui_lock_find(now), GUI_LOCK_COUNT, dir)];
@@ -31911,7 +31910,7 @@ static void gui_lp_park(Gui * const me)
     lv_refr_now(me->disp);
     gui_flush_wait_cb(me->disp);
 
-    /* The deep rest is a black glass, with no time on it (Luismi, 5-nov). */
+    /* The deep rest is a black glass, with no time on it. */
     (void)memset(&glyphs, 0, sizeof(glyphs));
     me->lp_strip.buf = NULL;
     glyphs.rest_pct  = gui_lp_rest_pct(me);
@@ -32404,7 +32403,7 @@ void Gui_ctor(void)
     me->group_count     = 0U;
     me->pending_back    = false;
     me->home_way        = GUI_HOME_AS_CAME;
-    me->pad             = false; /* the apocrifa's: no ring until a button (Luismi, 18-oct) */
+    me->pad             = false; /* the apocrifa's: no ring until a button */
     me->lp_row          = -1;
     me->lp_shelf        = -1;
     me->shelf_sel       = -1;
@@ -32834,7 +32833,7 @@ static QState Gui_initial(Gui * const me, void const * const par)
      * Ask for the announcement again rather than waiting for one that already
      * happened - the whole reason this component can start whenever it likes. */
     display_state_request();
-    /* Kody's pack is read while the panel comes up (Luismi, 5-nov): its 230 ms
+    /* Kody's pack is read while the panel comes up: its 230 ms
      * no longer come after the panel's. His wake-up waits for it,
      * CONFIG_KGUI_ASSETS_WAIT_MS at most, counted from here
      * (gui_face_kody_tick()). */
@@ -32941,7 +32940,7 @@ static QState Gui_waiting(Gui * const me, QEvt const * const e)
                  * the lists arrive while it is up. Back from an app the first
                  * frame is Apps instead, and waits for the installed list
                  * (Gui_returning). */
-                /* Nothing is lit until it is whole (Luismi, 5-nov): the face with
+                /* Nothing is lit until it is whole: the face with
                  * its scene and Kody standing in it, Apps with its rows. */
                 me->first_hold    = true;
                 me->first_hold_ms = khal_time_ms();
@@ -35546,13 +35545,13 @@ static QState gui_awake_events(Gui * const me, QEvt const * const e)
             break;
         }
         case GUI_LAUNCHER_SIG: {
-            /* The unlock, the way the hand asked for it (Luismi, 4-nov): a
+            /* The unlock, the way the hand asked for it: a
              * swipe takes the face out to its own side, the pad's right to
              * the left as Apps comes in from the right, and a tap or the top
              * button fade Apps in where the face was (the in-place growth
              * of GUI_CURTAIN_FACE_GROW), a door with no inverse. The door
              * is taken when the motion lands (gui_curtain_arrive()). */
-            /* One way in, whatever asked (Luismi, 5-nov): a fade in place. */
+            /* One way in, whatever asked: a fade in place. */
             GuiCurtainKind const kind = GUI_CURTAIN_FACE_GROW;
 
             /* Apps comes in on its rail, and the shelf's discs come in one
@@ -35744,7 +35743,7 @@ static QState Gui_rest(Gui * const me, QEvt const * const e)
             }
             if ( b->pressed && me->vbus )
             {
-                /* On a cable any button wakes it at once (Luismi, 9-nov). */
+                /* On a cable any button wakes it at once. */
                 gui_press_time(me, true);
                 me->wake_btn = b->id;
                 gui_door_log("rest", "face", GUI_WHY_WAKE_CABLE);
@@ -36714,7 +36713,7 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
         {
             row = 0U;
         }
-        /* Back to the page as it was left, still (Luismi, 5-nov): nothing
+        /* Back to the page as it was left, still: nothing
          * scrolls to the row. */
         if ( 0U < me->page_scroll_n )
         {
@@ -36730,7 +36729,7 @@ static QState gui_sheet_leave(Gui * const me, QStateHandler home)
             gui_sheet_select(me, row);
         }
         gui_sheet_rise(me);
-        /* Out of the keypad at once, as it came in (Luismi, 5-nov). */
+        /* Out of the keypad at once, as it came in. */
         if ( !from_keypad )
         {
             gui_sheet_level_fade(me);

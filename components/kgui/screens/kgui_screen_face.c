@@ -302,8 +302,8 @@ void kgui_screen_face_date_place(void)
 }
 
 /**
- * @brief Stand "Press ● again" so its dot falls right under the hour's colon
- *        (Luismi, 5-nov). The hour's width changes with its figures.
+ * @brief Stand "Press ● again" so its dot falls right under the hour's colon.
+ *        The hour's width changes with its figures.
  *
  * @param colon The colon's centre, in the face's columns.
  */
@@ -1088,7 +1088,7 @@ static void knock_build(lv_obj_t *scr)
     lv_obj_set_style_margin_top(dot, lh - kui_font_body.base_line - KGUI_FACE_KNOCK_DOT_PX, 0);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-    /* The blue of the top button, the one that wakes the Dot (Luismi, 5-nov). */
+    /* The blue of the top button, the one that wakes the Dot. */
     lv_obj_set_style_bg_color(dot, KUI_COLOR_ACCENT, 0);
     s_knock_last = knock_word(row, "twice");
     lv_obj_set_hidden(row, true);

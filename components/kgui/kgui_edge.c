@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /**
  * @file kgui_edge.c
- * @brief The edge's close and pop (kgui_edge.h); adapts kodediy/kode-dot-os, kshell_edge.c.
+ * @brief The edge's close and pop (kgui_edge.h); adapts kshell's kshell_edge.c.
  */
 #include "kgui_edge.h"
 

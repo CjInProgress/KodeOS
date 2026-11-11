@@ -2,7 +2,7 @@
 /**
  * @file kgui_backbar.h
  * @brief A page's title, centred on the glass, with the little arrow back at
- *        its left (Luismi, 5-nov): folders and Settings say where they are. It
+ *        its left: folders and Settings say where they are. It
  *        stays at the top: the list passes under it, into a black that fades.
  */
 #ifndef KGUI_BACKBAR_H

@@ -96,7 +96,7 @@ POLL_TIMEOUT_S = 5.0
 CAMERA_EXPECTED_S = 8          # the page's "do not touch" countdown
 STATION_FAULT = "station: "    # a row the station could not measure says so first
 OPERATOR_LIMIT_S = 20          # the Kode gives each button and touch step this long
-# The rear pads' limits, Luismi's from the station's bench (e5_test.py),
+# The rear pads' limits, from the station's bench (e5_test.py),
 # read at the point the ADC measures (x2 divider undone, A1 direct).
 PC_5V_MIN_V = 4.5              # A3 is the PC's USB 5 V that feeds the relays and the load: below, no station
 POGO_5V_MIN_V = 4.0            # A0 at rest: the +5V pogo touches the Kode's pad (and a charge that sags below cut)

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /**
  * @file kgui_welcome_ring.c
- * @brief The landing's ring (kgui_welcome.h): kshell_edge.c's SEGS form at 10 px, from kode-dot-os.
+ * @brief The landing's ring (kgui_welcome.h): kshell_edge.c's SEGS form at 10 px.
  */
 #include <stdbool.h>
 #include <stddef.h>
