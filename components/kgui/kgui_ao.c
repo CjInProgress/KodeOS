@@ -72,7 +72,6 @@
 #include "kgui_return.h"   /* the first frame after an app, and how long it waits for the list */
 #include "kgui_welcome.h"  /* the landing on the face after Welcome */
 #include "kgui_wifi.h"     /* the radios' rows' words, and why a join failed */
-#include "kgui_trim.h"     /* a typed name without the spaces at its ends */
 #include "kgui_syscard.h"  /* the words of the stopped, critical and factory reset cards, and their decisions */
 #include "kgui_sysscreen.h" /* the frame of a system screen: protagonist, figure, words, pill */
 #if CONFIG_KODE_TEST_DOT
@@ -824,8 +823,7 @@ enum {
     GUI_KBD_NONE = 0,   /**< No errand: no keypad is up, or its work is done and the card is closing. */
     GUI_KBD_NAME,       /**< A hidden network's name is being typed. */
     GUI_KBD_PASS,       /**< A password is being typed. */
-    GUI_KBD_JOINING,    /**< The join was asked for and its answer is awaited; the text is kept for the answer. */
-    GUI_KBD_BLE         /**< The name Bluetooth shows is being typed. */
+    GUI_KBD_JOINING     /**< The join was asked for and its answer is awaited; the text is kept for the answer. */
 };
 
 /* How long the keypad waits for the join's answer before it says it could not
@@ -1404,10 +1402,9 @@ typedef enum {
 #define GUI_TAG_BLE_CONSOLE   41U   /* a central is on the console          */
 #define GUI_TAG_BLE_BONDS     42U   /* how many peers are remembered        */
 #define GUI_BLE_PREFIX        "KODE "  /* What the apps look for: always there. */
-#define GUI_BLE_TYPED_MAX     15U      /* What a person types after it. */
 #define GUI_BLE_NAME_MAX      20U      /* The whole name; the scan response holds 29. */
 #define GUI_NVS_KEY_BLE_NAME  "blename"
-#define GUI_TAG_BLE_NAME      44U   /* the name it shows: tap to change it  */
+#define GUI_TAG_BLE_NAME      44U   /* the name it shows                    */
 #define GUI_TAG_BLE_FORGET    43U   /* forget every one of them             */
 #define GUI_TAG_BLE_PAIR      45U   /* show the board, so a new one pairs   */
 #define GUI_TAG_BAT_VALUE     50U   /* what is left, as a fill              */
@@ -3186,7 +3183,6 @@ static void gui_more_fill(Gui * const me);
 static void gui_time_fill(Gui * const me);
 static void gui_time_follow(Gui * const me);
 static uint32_t gui_time_minute(Gui const * const me, struct tm *out);
-static void gui_ble_name_set(Gui * const me, const char *typed);
 static const char *gui_ble_name_shown(Gui const * const me);
 static void gui_ble_name_send(Gui const * const me);
 static bool gui_row_cut(Gui const * const me, int32_t cy, kgui_rail_t const *edge);
@@ -21796,7 +21792,6 @@ static bool gui_sheet_row_acts(Gui const * const me, uint16_t tag)
         }
         case GUI_SHEET_BLE: {
             acts = ((uint16_t)GUI_TAG_BLE_SWITCH == tag)
-                   || ((uint16_t)GUI_TAG_BLE_NAME == tag)
                    || ((uint16_t)GUI_TAG_BLE_PAIR == tag)
                    || ((uint16_t)GUI_TAG_BLE_FORGET == tag);
             break;
@@ -22778,16 +22773,7 @@ static void gui_kbd_apply(Gui const * const me)
 {
     kgui_kbd_spec_t spec;
 
-    if ( (uint8_t)GUI_KBD_BLE == me->kbd_stage )
-    {
-        spec.title       = "Bluetooth name";
-        spec.placeholder = "Name";
-        spec.go          = "Save";
-        spec.cap         = (uint8_t)GUI_BLE_TYPED_MAX;
-        spec.secret      = false;
-        spec.min         = 0U;   /* nothing typed: back to the serial */
-    }
-    else if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
+    if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
     {
         spec.title       = GUI_KBD_HIDDEN;
         spec.placeholder = GUI_KBD_NETWORK_NAME;
@@ -22927,12 +22913,7 @@ static void gui_kbd_go(Gui * const me)
     uint32_t const now = khal_time_ms();
     size_t const   len = kgui_keyboard_len();
 
-    if ( (uint8_t)GUI_KBD_BLE == me->kbd_stage )
-    {
-        gui_ble_name_set(me, kgui_keyboard_text());
-        gui_sheet_close(me);
-    }
-    else if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
+    if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
     {
         if ( 0U == len )
         {
@@ -22999,7 +22980,7 @@ static void gui_kbd_act(Gui * const me, kgui_kbd_ctl_t ctl)
     if ( KGUI_KBD_FULL == r )
     {
         (void)kgui_haptic_play(KGUI_HAPTIC_THUD);
-        if ( ((uint8_t)GUI_KBD_NAME == me->kbd_stage) || ((uint8_t)GUI_KBD_BLE == me->kbd_stage) )
+        if ( (uint8_t)GUI_KBD_NAME == me->kbd_stage )
         {
             kgui_hint(GUI_KBD_NAME_FULL);
         }
@@ -23454,34 +23435,6 @@ static void gui_ble_name_send(Gui const * const me)
 }
 
 /**
- * @brief Take what was typed as the name Bluetooth shows: the apps look for the
- *        prefix, so it is always there. Nothing typed, or only spaces, goes
- *        back to the serial.
- *
- * The spaces at either end of the words are not part of the name.
- *
- * @param me    The AO.
- * @param typed The words.
- */
-static void gui_ble_name_set(Gui * const me, const char *typed)
-{
-    char words[GUI_BLE_TYPED_MAX + 1U];
-
-    if ( 0U == kgui_trim_spaces(typed, words, sizeof(words)) )
-    {
-        me->ble_name[0] = '\0';
-        (void)khal_nvs_erase(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME);
-    }
-    else
-    {
-        (void)snprintf(me->ble_name, sizeof(me->ble_name), "%s%s", GUI_BLE_PREFIX, words);
-        (void)khal_nvs_set_str(GUI_NVS_NAMESPACE, GUI_NVS_KEY_BLE_NAME, me->ble_name);
-    }
-    KLOG_N(TAG, "bluetooth name: '%s'", ('\0' != me->ble_name[0]) ? me->ble_name : "the serial");
-    gui_ble_name_send(me);
-}
-
-/**
  * @brief The Bluetooth sheet: the switch, then what the radio will admit to.
  *
  * AND THAT IS NOT MUCH, which is the whole design of this page. The stack
@@ -23547,7 +23500,8 @@ static void gui_ble_fill(Gui * const me)
     }
 
     /* The name to look for in the app: the serial, as it is
-     * advertised, never the printed form; a chosen one as it was typed. */
+     * advertised, never the printed form; a stored one without its prefix. A
+     * reading: nothing on the glass changes it. */
     if ( gui_sheet_row(me, "Visible as", gui_ble_name_shown(me),
                       KUI_COLOR_SURFACE, &kui_glyph_info, NULL) != NULL )
     {
@@ -23625,14 +23579,6 @@ static void gui_ble_act(Gui * const me, uint16_t tag)
     if ( (uint16_t)GUI_TAG_BLE_SWITCH == tag )
     {
         gui_ble_switch(me);
-    }
-    else if ( (uint16_t)GUI_TAG_BLE_NAME == tag )
-    {
-        me->kbd_ssid[0] = '\0';
-        me->kbd_secured = false;
-        me->kbd_door    = (uint16_t)GUI_TAG_BLE_NAME;
-        me->kbd_stage   = (uint8_t)GUI_KBD_BLE;
-        gui_sheet_open_kind(me, GUI_SHEET_KEYPAD);
     }
     else if ( (uint16_t)GUI_TAG_BLE_PAIR == tag )
     {
@@ -25126,16 +25072,8 @@ static void gui_sheet_kind_take(Gui * const me, GuiSheet kind)
 static const GuiListPage *gui_sheet_list_page(Gui const * const me,
                                               GuiSheet kind)
 {
-    /* The keypad for the Bluetooth name belongs to Bluetooth's page. */
-    static const GuiListPage ble_keypad = {
-        GUI_SHEET_KEYPAD, GUI_SHEET_BLE, (uint16_t)GUI_TAG_BLE_NAME, "Bluetooth"
-    };
     const GuiListPage *found = NULL;
 
-    if ( (GUI_SHEET_KEYPAD == kind) && ((uint8_t)GUI_KBD_BLE == me->kbd_stage) )
-    {
-        return &ble_keypad;
-    }
     if ( (GUI_SHEET_BAT == kind) && me->bat_from_cc )
     {
         return found;
