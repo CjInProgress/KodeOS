@@ -46,6 +46,7 @@
 #include "kgui_curtain.h"  /* the settings curtain: two still pictures and their objects */
 #include "kgui_hint.h"     /* the hint: a few words over the top band's rows */
 #include "kgui_kody_rest.h"
+#include "kgui_wface.h"    /* whose face the card of a write about no row wears */
 #include "kgui_rest.h"     /* the Lock at Rest: its numbers and the burn-in cycle */
 #include "kgui_off.h"      /* the face's red arc: how far a held bottom button has run it */
 #include "kgui_haptic.h"   /* the interface's buzz: four effects, one call */
@@ -672,6 +673,8 @@ typedef struct {
  * of this shape it carries, so a private event measured against ButtonEvt is
  * measured against the tier - without the SDK having to name a type that
  * lives above it. */
+_Static_assert(KGUI_WFACE_PROJECT_MAX == KODE_APP_PROJECT_MAX,
+               "a write's card names a project as its writer's reports do");
 _Static_assert(sizeof(SheetOpenEvt) <= sizeof(ButtonEvt),
                "SheetOpenEvt must fit the pool ButtonEvt fits");
 
@@ -2189,6 +2192,16 @@ typedef struct {
                               *   came, and a guided test. Not an armed
                               *   press: a hold does not end it. */
     uint32_t  bot_hold_ms;  /**< khal_time_ms() at the press it counts from. */
+    kgui_wface_t   wface;       /**< Whose face the card of a write about no
+                                 *   row wears (kgui_wface.h): the project its
+                                 *   writer's reports name. */
+    GuiFace        write_face;  /**< That face: a row's when the project has
+                                 *   one that is settled, else what its data
+                                 *   folder answered, the project name until
+                                 *   it does. */
+    uint8_t       *write_icon;  /**< Its icon's block, PSRAM, one more of the
+                                 *   icon slots; NULL when there was none. */
+    lv_image_dsc_t write_icon_dsc; /**< And its header, written beside theirs. */
     char      write_name[KODE_APP_FILE_MAX];
                          /**< What the Opening sheet is about, named the way
                            *   a person would: the display name the pill
@@ -3640,6 +3653,16 @@ static void gui_face_forget(GuiFace *face);
 static const char *gui_icon_status_name(uint8_t st);
 static GuiFace *gui_face_by_project(Gui * const me, const char *project);
 static uint8_t gui_slot_by_project(Gui const * const me, const char *project);
+static void gui_face_requery(GuiFace *face);
+static void gui_icon_dsc_set(lv_image_dsc_t *dsc, const uint8_t *block);
+static void gui_write_face_show(Gui * const me);
+static void gui_face_look(const GuiFace *face, const lv_image_dsc_t *image,
+                          kgui_icon_spec_t *out);
+static void gui_face_fields(GuiFace *face, AppDataFieldsEvt const * const f);
+static void gui_write_face_settle(Gui * const me);
+static void gui_write_face_report(Gui * const me, const AppProgressEvt *p);
+static bool gui_write_face_worn(Gui const * const me, int8_t row);
+static void gui_write_face_wear(Gui * const me, const GuiFace *row);
 static const GuiFace *gui_row_face(Gui const * const me, uint8_t row);
 static const GuiFace *gui_row_face_of(Gui const * const me, GuiRow const * const row);
 static uint8_t gui_row_slot(Gui const * const me, uint8_t row);
@@ -5422,13 +5445,15 @@ static bool ui_build(Gui * const me)
                         "apps glyph", (unsigned)i);
             break;
         }
-        me->icon_dsc[i].header.magic  = LV_IMAGE_HEADER_MAGIC;
-        me->icon_dsc[i].header.cf     = LV_COLOR_FORMAT_RGB565A8;
-        me->icon_dsc[i].header.w      = KAPP_ICON_W;
-        me->icon_dsc[i].header.h      = KAPP_ICON_H;
-        me->icon_dsc[i].header.stride = KAPP_ICON_W * 2U;
-        me->icon_dsc[i].data_size     = KAPP_ICON_BYTES;
-        me->icon_dsc[i].data          = me->icon_slot[i];
+        gui_icon_dsc_set(&me->icon_dsc[i], me->icon_slot[i]);
+    }
+    /* One more, for the card of a write about no row (gui_write_face_take()).
+     * Without it that card wears the app's letters on its colour. */
+    /* cppcheck-suppress misra-c2012-11.5 ; khal_alloc_psram() answers void *: PSRAM is taken by name (rule 8) */
+    me->write_icon = (uint8_t *)khal_alloc_psram(64U, KAPP_ICON_BYTES);
+    if ( NULL != me->write_icon )
+    {
+        gui_icon_dsc_set(&me->write_icon_dsc, me->write_icon);
     }
 
     /* THE SHEET, onto lv_layer_top() - the layer LVGL keeps above every
@@ -10365,6 +10390,24 @@ static void gui_desc_answer(Gui * const me, GuiEntry * const e,
 }
 
 /**
+ * @brief Write the header of one icon block: a .k64 is 64x64 RGB565A8 by
+ *        definition, whatever file lands in the block.
+ *
+ * @param dsc   The header.
+ * @param block The block's KAPP_ICON_BYTES.
+ */
+static void gui_icon_dsc_set(lv_image_dsc_t *dsc, const uint8_t *block)
+{
+    dsc->header.magic  = LV_IMAGE_HEADER_MAGIC;
+    dsc->header.cf     = LV_COLOR_FORMAT_RGB565A8;
+    dsc->header.w      = KAPP_ICON_W;
+    dsc->header.h      = KAPP_ICON_H;
+    dsc->header.stride = KAPP_ICON_W * 2U;
+    dsc->data_size     = KAPP_ICON_BYTES;
+    dsc->data          = block;
+}
+
+/**
  * @brief Which icon slot an entry owns.
  *
  * entries[] takes the low half, installed[] the high one, and this is the
@@ -10419,6 +10462,47 @@ static uint8_t gui_row_slot(Gui const * const me, uint8_t row)
         return (uint8_t)GUI_ROWS_MAX;
     }
     return gui_entry_slot(me->rows[row].kind, me->rows[row].idx);
+}
+
+/**
+ * @brief Write a folder's answer over a face, field by field.
+ *
+ * Only what the folder has: an absent key keeps what the face held. A busy
+ * answer and a file the board refused change nothing.
+ *
+ * @param face The face, already put back to what its model says.
+ * @param f    The folder's fields.
+ */
+static void gui_face_fields(GuiFace *face, AppDataFieldsEvt const * const f)
+{
+    if ( ((uint8_t)APPDATA_ICON_BUSY != f->icon_status)
+        && ((uint8_t)KAPP_JSON_OK == f->json_status) )
+    {
+        if ( '\0' != f->name[0] )
+        {
+            (void)snprintf(face->name, sizeof(face->name), "%s", f->name);
+        }
+        if ( '\0' != f->category[0] )
+        {
+            (void)snprintf(face->category, sizeof(face->category), "%s",
+                           f->category);
+        }
+        if ( '\0' != f->version[0] )
+        {
+            (void)snprintf(face->version, sizeof(face->version), "%s",
+                           f->version);
+        }
+        if ( '\0' != f->description[0] )
+        {
+            (void)snprintf(face->description, sizeof(face->description), "%s",
+                           f->description);
+        }
+        if ( f->color_valid )
+        {
+            face->color = lv_color_make(f->color[0], f->color[1], f->color[2]);
+            face->color_ok = true;
+        }
+    }
 }
 
 /**
@@ -10510,6 +10594,17 @@ static void gui_ask_next_appdata(Gui * const me)
     if ( '\0' != me->appdata_project[0] )
     {
         return;   /* one at a time; the end marker starts the next */
+    }
+    /* The card of a write is on the glass now, and its write may be short:
+     * its folder goes ahead of every row's. */
+    if ( me->wface.owed )
+    {
+        me->wface.owed = false;
+        gui_face_requery(&me->write_face);
+        (void)snprintf(me->appdata_project, sizeof(me->appdata_project),
+                       "%s", me->wface.project);
+        appdata_request(me->appdata_project, &me->super);
+        return;
     }
     /* Two passes: the rows that have never been answered first - they are
      * what the list is waiting for - and then the ones a rescan asks again
@@ -11627,6 +11722,13 @@ static void gui_meta_retry(Gui * const me)
     bool desc = false;
 
     me->meta_retrying = false;
+    if ( me->write_face.retry )
+    {
+        /* The card of a write about no row: its folder is owed again, when
+         * the card still wears that face. */
+        me->write_face.retry = false;
+        me->wface.owed       = kgui_wface_has(&me->wface);
+    }
     for ( uint8_t i = 0U; i < me->installed_count; ++i )
     {
         if ( me->installed[i].face.retry )
@@ -13463,14 +13565,31 @@ static bool gui_deadline_due(uint32_t until, uint32_t span)
 static void gui_face_icon(Gui const * const me, const GuiFace *face, uint8_t slot,
                           kgui_icon_spec_t *out)
 {
-    char mono[3];
+    const lv_image_dsc_t *image = NULL;
 
-    (void)memset(out, 0, sizeof(*out));
     if ( face->icon_ok && ((uint8_t)GUI_ROWS_MAX > slot)
         && (NULL != me->icon_slot[slot]) )
     {
-        out->image = &me->icon_dsc[slot];
+        image = &me->icon_dsc[slot];
     }
+    gui_face_look(face, image, out);
+}
+
+/**
+ * @brief What an app's icon looks like from its face and its picture, when it
+ *        has one: the picture, or its letters on its colour.
+ *
+ * @param face  The app's face.
+ * @param image Its picture; NULL for none.
+ * @param out   Receives the icon.
+ */
+static void gui_face_look(const GuiFace *face, const lv_image_dsc_t *image,
+                          kgui_icon_spec_t *out)
+{
+    char mono[3];
+
+    (void)memset(out, 0, sizeof(*out));
+    out->image = image;
     gui_mono_letters(face, mono);
     out->mono[0] = mono[0];
     out->mono[1] = mono[1];
@@ -14802,6 +14921,135 @@ static void gui_opening_show(Gui * const me)
     }
 }
 
+/* ---- The face of a write about no row --------------------------------------
+ * A console `install` or one from the Kode channel is about no row of Apps.
+ * Its writer's reports name the project, and an app's data folder is named for
+ * it and may be on the board before the app is: the card wears that folder's
+ * name, icon and colour, its letters on its colour until the folder answers.
+ */
+
+/**
+ * @brief Give the card's face what a row's face shows: its words and colour.
+ *
+ * @param me  The AO.
+ * @param row The row's face.
+ */
+static void gui_write_face_wear(Gui * const me, const GuiFace *row)
+{
+    GuiFace * const face = &me->write_face;
+
+    (void)snprintf(face->name, sizeof(face->name), "%s", row->name);
+    (void)snprintf(face->category, sizeof(face->category), "%s", row->category);
+    (void)snprintf(face->version, sizeof(face->version), "%s", row->version);
+    (void)snprintf(face->description, sizeof(face->description), "%s",
+                   row->description);
+    face->color    = row->color;
+    face->color_ok = row->color_ok;
+}
+
+/**
+ * @brief The card's face is a new app's: wear a row's meanwhile, and ask its
+ *        folder.
+ *
+ * A row that goes by the project and has heard from its folder shows what the
+ * folder said then, picture included, and the card wears that at once. The
+ * folder is asked all the same, ahead of the rows' questions
+ * (gui_ask_next_appdata()): a folder can be written or fetched at any moment
+ * and no row hears of it, so the row may be older than the folder. A busy
+ * AO_Storage, which is what an install from a file meets for its whole
+ * length, leaves the card with the row's face.
+ *
+ * @param me The AO; me->wface names the project and owes its question.
+ */
+static void gui_write_face_take(Gui * const me)
+{
+    const GuiFace * const row  = gui_face_by_project(me, me->wface.project);
+    uint8_t const         slot = gui_slot_by_project(me, me->wface.project);
+
+    gui_face_forget(&me->write_face);
+    gui_face_seed(&me->write_face, "", me->wface.project, "", NULL);
+    if ( (NULL != row) && row->settled )
+    {
+        gui_write_face_wear(me, row);
+        if ( row->icon_ok && ((uint8_t)GUI_ROWS_MAX > slot)
+            && (NULL != me->icon_slot[slot]) && (NULL != me->write_icon) )
+        {
+            (void)memcpy(me->write_icon, me->icon_slot[slot], KAPP_ICON_BYTES);
+            me->write_face.icon_ok = true;
+        }
+    }
+    gui_ask_next_appdata(me);
+}
+
+/**
+ * @brief A report of a write: keep, drop or take the face its card wears.
+ *
+ * @param me The AO.
+ * @param p  The report.
+ */
+static void gui_write_face_report(Gui * const me, const AppProgressEvt *p)
+{
+    bool const app = ((uint8_t)KWRITE_APP == p->what)
+                     || ((uint8_t)KWRITE_APP_RUN == p->what);
+    kgui_wface_act_t const act = kgui_wface_report(&me->wface, app, p->project);
+
+    if ( KGUI_WFACE_TAKE == act )
+    {
+        gui_write_face_take(me);
+    }
+    if ( KGUI_WFACE_KEEP != act )
+    {
+        gui_write_face_show(me);
+    }
+}
+
+/**
+ * @brief The folder of the card's face has answered.
+ *
+ * Busy is no answer: the question is owed again a little later, with the
+ * rows' retries (gui_meta_retry()), and not at once, which would ask a busy
+ * AO_Storage as fast as it can say so.
+ *
+ * @param me The AO.
+ */
+static void gui_write_face_settle(Gui * const me)
+{
+    GuiFace * const face = &me->write_face;
+
+    if ( (uint8_t)APPDATA_ICON_BUSY == face->icon_status )
+    {
+        face->retry       = true;
+        me->meta_retrying = true;
+        me->meta_retry_ms = khal_time_ms();
+    }
+    else
+    {
+        face->icon_ok = ((uint8_t)APPDATA_ICON_OK == face->icon_status)
+                        && (0x07U == face->icon_parts)
+                        && (NULL != me->write_icon);
+        face->settled = true;
+        KLOG_D(TAG, "write face %s: \"%s\" json=%s icon=%s", me->wface.project,
+               face->name,
+               kapp_json_status_name((kapp_json_status_t)face->json_status),
+               gui_icon_status_name(face->icon_status));
+        gui_write_face_show(me);
+    }
+}
+
+/**
+ * @brief Whether the card on the glass wears the face of a write about no row.
+ *
+ * @param me  The AO.
+ * @param row The row the card is about; negative for none.
+ * @return true for an app's write about no row whose project is known.
+ */
+static bool gui_write_face_worn(Gui const * const me, int8_t row)
+{
+    return (0 > row) && kgui_wface_has(&me->wface)
+           && ((uint8_t)KWRITE_OS != me->write_what)
+           && ((uint8_t)KWRITE_C5 != me->write_what);
+}
+
 /**
  * @brief Say how far a write has got, from what its writer reports.
  *
@@ -14835,6 +15083,12 @@ static void gui_opening_show(Gui * const me)
  */
 static void gui_show_write(Gui * const me, const AppProgressEvt *p)
 {
+    /* A write that begins is not the one before it: whatever face its card
+     * wore is nobody's, and the same app written again asks its folder again. */
+    if ( !me->writing )
+    {
+        kgui_wface_end(&me->wface);
+    }
     /* Something IS in flight, which `gui` has to say even though no
      * transition happens: a report arriving over the card that is already up
      * is answered by rewriting it. */
@@ -14882,6 +15136,7 @@ static void gui_show_write(Gui * const me, const AppProgressEvt *p)
         gui_write_display_name(me, me->write_name, sizeof(me->write_name),
                                p->file);
     }
+    gui_write_face_report(me, p);
     gui_opening_show(me);
 }
 
@@ -21267,9 +21522,39 @@ static void gui_write_prot(Gui * const me, int8_t row)
     {
         kgui_sys_glyph(&me->sys, &kui_glyph_chip_96, KUI_COLOR_ACCENT);
     }
+    else if ( gui_write_face_worn(me, row) )
+    {
+        kgui_icon_spec_t      look;
+        const lv_image_dsc_t *image = NULL;
+
+        if ( me->write_face.icon_ok )
+        {
+            image = &me->write_icon_dsc;
+        }
+        gui_face_look(&me->write_face, image, &look);
+        kgui_sys_app(&me->sys, &look);
+    }
     else
     {
         gui_frame_look(me, row);
+    }
+}
+
+/**
+ * @brief The face of a write about no row changed: draw it on the card that
+ *        is up.
+ *
+ * Only the Opening card: a card that rises later reads the face as it stands
+ * (gui_opening_fill(), gui_failure_fill()).
+ *
+ * @param me The AO.
+ */
+static void gui_write_face_show(Gui * const me)
+{
+    if ( (GUI_SHEET_OPENING == me->sheet) && (0 > gui_sheet_card_row(me)) )
+    {
+        gui_write_prot(me, -1);
+        gui_opening_progress(me);
     }
 }
 
@@ -21296,6 +21581,10 @@ static const char *gui_write_name(Gui const * const me, int8_t row)
     else if ( 0 <= row )
     {
         name = gui_row_face(me, (uint8_t)row)->name;
+    }
+    else if ( gui_write_face_worn(me, row) )
+    {
+        name = me->write_face.name;
     }
     else
     {
@@ -35133,36 +35422,28 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                      * is and is asked again (APPDATA_END_SIG). */
                     gui_face_rebase(me, f->project);
                 }
-                if ( ((uint8_t)APPDATA_ICON_BUSY != f->icon_status)
-                    && ((uint8_t)KAPP_JSON_OK == f->json_status) )
+                gui_face_fields(face, f);
+            }
+            if ( kgui_wface_is(&me->wface, f->project) )
+            {
+                /* The card of a write about no row wears this folder too. A
+                 * busy answer is no answer and changes nothing on it. */
+                me->write_face.json_status = f->json_status;
+                me->write_face.icon_status = f->icon_status;
+                if ( (uint8_t)APPDATA_ICON_BUSY == f->icon_status )
                 {
-                    if ( '\0' != f->name[0] )
-                    {
-                        (void)snprintf(face->name, sizeof(face->name), "%s",
-                                       f->name);
-                    }
-                    if ( '\0' != f->category[0] )
-                    {
-                        (void)snprintf(face->category, sizeof(face->category),
-                                       "%s", f->category);
-                    }
-                    if ( '\0' != f->version[0] )
-                    {
-                        (void)snprintf(face->version, sizeof(face->version),
-                                       "%s", f->version);
-                    }
-                    if ( '\0' != f->description[0] )
-                    {
-                        (void)snprintf(face->description,
-                                       sizeof(face->description), "%s",
-                                       f->description);
-                    }
-                    if ( f->color_valid )
-                    {
-                        face->color = lv_color_make(f->color[0], f->color[1],
-                                                    f->color[2]);
-                        face->color_ok = true;
-                    }
+                    /* Asked again a little later (gui_write_face_settle()). */
+                }
+                else if ( NULL != face )
+                {
+                    /* A row goes by the project and has just been written
+                     * from this answer, over its own image's words. */
+                    gui_write_face_wear(me, face);
+                }
+                else
+                {
+                    gui_face_seed(&me->write_face, "", me->wface.project, "", NULL);
+                    gui_face_fields(&me->write_face, f);
                 }
             }
             status = Q_HANDLED();
@@ -35185,6 +35466,13 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
                              ic->data, KODE_RECV_CHUNK);
                 face->icon_parts |= (uint8_t)(1U << ic->seq);
             }
+            if ( kgui_wface_is(&me->wface, ic->project)
+                && (NULL != me->write_icon) && (3U > ic->seq) )
+            {
+                (void)memcpy(&me->write_icon[(size_t)ic->seq * KODE_RECV_CHUNK],
+                             ic->data, KODE_RECV_CHUNK);
+                me->write_face.icon_parts |= (uint8_t)(1U << ic->seq);
+            }
             status = Q_HANDLED();
             break;
         }
@@ -35195,6 +35483,10 @@ static QState Gui_running(Gui * const me, QEvt const * const e)
              * rescan overtook it) finds no face and only releases the
              * chain, which is the whole of what it can still do. */
             GuiFace * const face = gui_face_by_project(me, me->appdata_project);
+            if ( kgui_wface_is(&me->wface, me->appdata_project) )
+            {
+                gui_write_face_settle(me);
+            }
             if ( NULL == face )
             {
                 /* Nobody is called that any more. */
