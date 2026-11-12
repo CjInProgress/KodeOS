@@ -1190,6 +1190,7 @@ _Static_assert(sizeof(GuiAssetsCmdEvt) <= sizeof(ConsoleLineEvt),
 #define GUI_MS_PER_S     1000U /**< Milliseconds in a second. */
 #define GUI_HOUR_MIN     60U   /**< Minutes in an hour. */
 #define GUI_DAY_HOURS    24U   /**< Hours in a day. */
+#define GUI_HOUR_SCENES_MAX 3U /**< The most scenes an hour draws among (gui_scene_of_the_hour()). */
 #define GUI_YEAR_DAYS    366U  /**< Days counted to a year, so that day 365 of a leap year cannot meet day 0 of the next one. */
 #define GUI_DATE_MONTH_LEN 3   /**< Letters of a month in the compiler's date. */
 
@@ -14676,10 +14677,6 @@ static void gui_welcome_tick(Gui * const me)
         && kgui_welcome_due(&me->welcome, me->face_woke, gui_screen_bare(me, kgui_screen_face),
                             khal_time_ms()) )
     {
-        if ( !kgui_welcome_ring_start() )
-        {
-            KLOG_W(TAG, "welcome: no room for the ring; Kody reads the line alone");
-        }
         gui_visit(me, GUI_VISIT_NOTICE, KGUI_WELCOME_TEXT);
         gui_welcome_mark(KGUI_WELCOME_DONE);
         KLOG_N(TAG, "welcome: greeted, done");
@@ -27246,51 +27243,60 @@ static void gui_visit(Gui * const me, GuiVisit kind, const char *text)
  *
  * At random among the hour's scenes, never the one on the glass, the same one
  * until the hour turns and kept across a reset (kshell_face.c, scene_draw()).
+ * While the hour is unknown nothing is drawn and nothing is stored: the
+ * pack's own pick holds until the clock is set, and the first hour known
+ * draws once. A draw before it would be thrown away seconds later, when the
+ * time server answers, and Kody would cut to another scene right after boot.
  *
  * @param me       The AO.
- * @param fallback The pack's own pick, for a pack without these scenes.
+ * @param fallback The pack's own pick, for a pack without these scenes and
+ *                 while the hour is unknown.
  * @return The scene.
  */
 static GuiSceneId gui_scene_of_the_hour(Gui const * const me, GuiSceneId fallback)
 {
     /* The apocrifa's scenes of the hour (kshell_face.c, 15-oct): breakfast 7
-     * to 10, the workshop 16 to 20, the beach at sunset 20 to 22; with no
-     * hour known, all nine. The rain needs the weather, which kodeOS does not
-     * know: only a fixed choice or no hour shows it. */
+     * to 10, the workshop 16 to 20, the beach at sunset 20 to 22. The rain
+     * needs the weather, which kodeOS does not know: only a fixed choice
+     * shows it. */
     static const char *const MORNING[]   = { "desayuno", "tren", "parque" };
     static const char *const MIDDAY[]    = { "tren", "parque" };
     static const char *const AFTERNOON[] = { "taller", "parque", "tren" };
     static const char *const EVENING[]   = { "playa", "azotea", "camping" };
     static const char *const NIGHT[]     = { "madrugada", "camping", "azotea" };
-    static const char *const ALL[]       = { "tren", "parque", "camping", "azotea", "madrugada",
-                                             "desayuno", "taller", "lluvia", "playa" };
     /* What the hour drew: the same scene until the hour turns. */
     static int32_t    s_drawn_stamp = -2;
     static GuiSceneId s_drawn       = KGUI_ASSETS_BUILTIN;
     static bool       s_read;
     typedef struct { char name[16]; int32_t stamp; } SceneMemo;
     int8_t const            h = me->face_hour;
-    const char *const      *list = ALL;
-    uint32_t                n = sizeof(ALL) / sizeof(ALL[0]);
-    GuiSceneId              pool[sizeof(ALL) / sizeof(ALL[0])];
+    const char *const      *list = NIGHT;
+    uint32_t                n = sizeof(NIGHT) / sizeof(NIGHT[0]);
+    GuiSceneId              pool[GUI_HOUR_SCENES_MAX];
     uint32_t                k = 0U;
     struct tm               t;
-    int32_t                 stamp = -1;
+    int32_t                 stamp;
 
-    if ( 0 <= h )
+    _Static_assert((sizeof(MORNING) / sizeof(MORNING[0])) <= GUI_HOUR_SCENES_MAX, "pool");
+    _Static_assert((sizeof(MIDDAY) / sizeof(MIDDAY[0])) <= GUI_HOUR_SCENES_MAX, "pool");
+    _Static_assert((sizeof(AFTERNOON) / sizeof(AFTERNOON[0])) <= GUI_HOUR_SCENES_MAX, "pool");
+    _Static_assert((sizeof(EVENING) / sizeof(EVENING[0])) <= GUI_HOUR_SCENES_MAX, "pool");
+    _Static_assert((sizeof(NIGHT) / sizeof(NIGHT[0])) <= GUI_HOUR_SCENES_MAX, "pool");
+    if ( 0 > h )
     {
-        if ( (7 <= h) && (10 > h) )       { list = MORNING;   n = sizeof(MORNING) / sizeof(MORNING[0]); }
-        else if ( (10 <= h) && (16 > h) ) { list = MIDDAY;    n = sizeof(MIDDAY) / sizeof(MIDDAY[0]); }
-        else if ( (16 <= h) && (20 > h) ) { list = AFTERNOON; n = sizeof(AFTERNOON) / sizeof(AFTERNOON[0]); }
-        else if ( (20 <= h) && (22 > h) ) { list = EVENING;   n = sizeof(EVENING) / sizeof(EVENING[0]); }
-        else                            { list = NIGHT;     n = sizeof(NIGHT) / sizeof(NIGHT[0]); }
-        stamp = (int32_t)h;
-        if ( gui_local_tm(me, &t) )
-        {
-            uint32_t const hours = gui_face_minute(&t) / GUI_HOUR_MIN;
+        return fallback;   /* No hour to draw by: the memo waits for one. */
+    }
+    if ( (7 <= h) && (10 > h) )       { list = MORNING;   n = sizeof(MORNING) / sizeof(MORNING[0]); }
+    else if ( (10 <= h) && (16 > h) ) { list = MIDDAY;    n = sizeof(MIDDAY) / sizeof(MIDDAY[0]); }
+    else if ( (16 <= h) && (20 > h) ) { list = AFTERNOON; n = sizeof(AFTERNOON) / sizeof(AFTERNOON[0]); }
+    else if ( (20 <= h) && (22 > h) ) { list = EVENING;   n = sizeof(EVENING) / sizeof(EVENING[0]); }
+    else                              { /* NIGHT, as set above. */ }
+    stamp = (int32_t)h;
+    if ( gui_local_tm(me, &t) )
+    {
+        uint32_t const hours = gui_face_minute(&t) / GUI_HOUR_MIN;
 
-            stamp = (int32_t)hours;
-        }
+        stamp = (int32_t)hours;
     }
     if ( !s_read )
     {
@@ -27299,7 +27305,7 @@ static GuiSceneId gui_scene_of_the_hour(Gui const * const me, GuiSceneId fallbac
         size_t    len = sizeof(m);
 
         s_read = true;
-        if ( (0 <= stamp) && (khal_nvs_get_blob(GUI_NVS_NAMESPACE, GUI_NVS_KEY_HOUR_SCENE, &m, &len) == KODE_OK)
+        if ( (khal_nvs_get_blob(GUI_NVS_NAMESPACE, GUI_NVS_KEY_HOUR_SCENE, &m, &len) == KODE_OK)
             && (sizeof(m) == len) && (m.stamp == stamp) )
         {
             m.name[sizeof(m.name) - 1U] = '\0';
@@ -27339,7 +27345,6 @@ static GuiSceneId gui_scene_of_the_hour(Gui const * const me, GuiSceneId fallbac
     }
     s_drawn_stamp = stamp;
     s_drawn       = pool[khal_random() % k];
-    if ( 0 <= stamp )
     {
         SceneMemo m = { .stamp = stamp };
 
@@ -29054,7 +29059,6 @@ static void gui_rest_enter(Gui * const me)
 {
     me->at_rest = true;
     gui_pill_clear(me);
-    kgui_welcome_ring_stop();
     gui_press_disarm(me);
     me->bot_hold = false;
     me->bot_face = false;
