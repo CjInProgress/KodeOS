@@ -77,6 +77,15 @@ for found in tools/tests/test_*; do
     fi
 done
 
+# Pillow is the one module these tests need that Python does not ship, and
+# ESP-IDF's environment has none. Without it test_kappdata.py stops on an
+# ImportError and test_factory.py on an assertion about a missing photo,
+# neither of which names the cause, so it is named here, before them.
+if ! python3 -c 'import PIL' >/dev/null 2>&1; then
+    printf '\033[31mFAIL\033[0m  Pillow is missing, and test_kappdata.py and test_factory.py need it: python3 -m pip install pillow\n'
+    fail=1
+fi
+
 for t in "${TESTS[@]}"; do
     if [ ! -f "$t" ]; then
         printf '\033[31mFAIL\033[0m  %s is listed here and not in the tree\n' "$t"
